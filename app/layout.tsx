@@ -1,15 +1,24 @@
-import { Geist, Geist_Mono, Instrument_Sans } from "next/font/google"
+import { Geist_Mono, Instrument_Sans, Inter } from "next/font/google"
+import type { Metadata } from "next"
 
-import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
-import { cn } from "@/lib/utils";
+import { ClerkProvider } from "@clerk/nextjs"
+import { TooltipProvider } from "@/components/ui/tooltip"
 
-const instrumentSans = Instrument_Sans({subsets:['latin'],variable:'--font-sans'})
+import { cn } from "@/lib/utils"
+import "./globals.css"
+
+const inter = Inter({subsets:['latin'],variable:'--font-sans'})
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
 })
+
+export const metadata: Metadata = {
+  title: "Homie",
+  description: "AI for the people",
+}
 
 export default function RootLayout({
   children,
@@ -20,10 +29,24 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("antialiased", fontMono.variable, "font-sans", instrumentSans.variable)}
+      className={cn(
+        "antialiased",
+        fontMono.variable,
+        "font-sans",
+        inter.variable
+      )}
     >
       <body>
-        <ThemeProvider>{children}</ThemeProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <ClerkProvider>
+            <TooltipProvider>{children}</TooltipProvider>
+          </ClerkProvider>
+        </ThemeProvider>
       </body>
     </html>
   )
