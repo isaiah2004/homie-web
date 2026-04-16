@@ -96,6 +96,14 @@ function renderWithAgentPill(content: string): React.ReactNode {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Page() {
+  return (
+    <React.Suspense fallback={<div><SiteHeader pageName="Chats" /><div className="p-6 text-sm text-muted-foreground">Loading…</div></div>}>
+      <ChatsContent />
+    </React.Suspense>
+  )
+}
+
+function ChatsContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const withParam = searchParams.get("with") as Id<"users"> | null
