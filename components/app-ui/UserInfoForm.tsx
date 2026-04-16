@@ -11,15 +11,12 @@ import {
   PlusIcon,
   XIcon,
 } from "lucide-react"
+import { useMutation, useQuery } from "convex/react"
+import { api } from "@/convex/_generated/api"
+import { Id } from "@/convex/_generated/dataModel"
+import { useUser } from "@clerk/nextjs"
 
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
 import {
   Accordion,
   AccordionContent,
@@ -52,7 +49,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
-const visibilityEnum = z.enum(["close", "friends", "mutual"])
+const visibilityEnum = z.enum(["close", "friends", "mutual", "none"])
 const sensitiveVisibilityEnum = z.enum(["close", "none"])
 
 const interestSchema = z.object({
@@ -172,6 +169,12 @@ function VisibilitySelect({
             Mutual
           </div>
         </SelectItem>
+        <SelectItem value="none">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
+            No One
+          </div>
+        </SelectItem>
       </SelectContent>
     </Select>
   )
@@ -271,7 +274,8 @@ function SectionCard({
   className?: string
 }) {
   return (
-    <div className={`relative overflow-hidden rounded-xl border p-6 shadow-sm transition-all hover:shadow-md ${className ?? ""}`}>
+    <div className={`relative overflow-hidden rounded-xl border bg-muted/60 p-6 shadow-sm transition-all hover:shadow-md dark:bg-background/60 ${className ?? ""}`}>
+      <div className="pointer-events-none absolute inset-0 bg-foreground/[0.04]" />
       <div className="absolute inset-0 opacity-5 mix-blend-overlay">
         <div className="w-full h-full bg-repeat bg-center" style={{ backgroundImage: 'url(/images/textures/davidzydd-mesh-2697072_1920.png)', backgroundSize: '300px 300px' }} />
       </div>
@@ -282,10 +286,41 @@ function SectionCard({
   )
 }
 
+function TexturedCard({
+  children,
+  className,
+}: {
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      className={`relative overflow-hidden rounded-xl border bg-transparent p-5 ring-1 ring-foreground/10 ${className ?? ""}`}
+    >
+      <div className="pointer-events-none absolute inset-0 bg-white/[0.06]" />
+      <div
+        className="pointer-events-none absolute inset-0 opacity-40 mix-blend-overlay"
+        style={{
+          backgroundImage:
+            "url(/images/textures/stronger-background-textuer-noise.png)",
+          backgroundRepeat: "repeat",
+          backgroundSize: "256px 256px",
+        }}
+      />
+      <div className="relative">{children}</div>
+    </div>
+  )
+}
+
 // ── Main form ────────────────────────────────────────────────────────────────
 
 export function UserInfoForm() {
+  const { user, isLoaded: isUserLoaded } = useUser()
   const [activeRole, setActiveRole] = React.useState<string[]>([])
+  const [isLoading, setIsLoading] = React.useState(false)
+
+  const getOrCreateUser = useMutation(api.users.getOrCreateUser)
+  const updateProfile = useMutation(api.users.updateProfile)
 
   const form = useForm<FormValues>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -308,19 +343,112 @@ export function UserInfoForm() {
   const places = useFieldArray({ control: form.control, name: "places" })
   const projects = useFieldArray({ control: form.control, name: "projects" })
 
-  function onSubmit(data: FormValues) {
-    toast("Profile saved!", {
-      description: (
-        <pre className="bg-code text-code-foreground mt-2 w-[320px] overflow-x-auto rounded-md p-4">
-          <code>{JSON.stringify(data, null, 2)}</code>
-        </pre>
-      ),
-      position: "bottom-right",
-      classNames: { content: "flex flex-col gap-2" },
-      style: {
-        "--border-radius": "calc(var(--radius) + 4px)",
-      } as React.CSSProperties,
-    })
+  // The canonical identity for Name comes from Clerk — the form field is
+  // uneditable here and simply submits whatever Clerk provides.
+  const clerkFullName = React.useMemo(() => {
+    if (!user) return ""
+    if (user.fullName) return user.fullName
+    const parts = [user.firstName, user.lastName].filter(Boolean) as string[]
+    if (parts.length > 0) return parts.join(" ")
+    return user.username ?? ""
+  }, [user])
+
+  // Auto-load user profile on page load
+  React.useEffect(() => {
+    if (isUserLoaded && user?.primaryEmailAddress?.emailAddress) {
+      // Use fetchQuery instead of useQuery for one-time fetch in useEffect
+      import("convex/nextjs").then(({ fetchQuery }) => {
+        fetchQuery(api.users.getUserByEmail, { email: user.primaryEmailAddress!.emailAddress })
+          .then((userProfile) => {
+            if (userProfile) {
+              // Populate form with existing data. Name is always taken from
+              // Clerk (authoritative source) and ignored from Convex.
+              form.reset({
+                name: clerkFullName || userProfile.name || "",
+                visibility: userProfile.visibility || "friends",
+                dob: userProfile.dob || "",
+                workplace: userProfile.workplace || { name: "", mapsLink: "", visibility: "none" },
+                school: userProfile.school || { name: "", mapsLink: "", visibility: "none" },
+                interests: userProfile.interests || [],
+                media: userProfile.media || [],
+                places: userProfile.places || [],
+                projects: userProfile.projects || [],
+              })
+              if (userProfile.currentStatus) {
+                setActiveRole(userProfile.currentStatus)
+              }
+            } else if (clerkFullName) {
+              form.setValue("name", clerkFullName)
+            }
+          })
+          .catch((err) => {
+            console.error("Error loading user profile:", err)
+          })
+      })
+    }
+  }, [isUserLoaded, user, form, clerkFullName])
+
+  // Keep the Name field in lock-step with Clerk in case it changes after
+  // initial load (e.g. the user updates their Clerk profile in another tab).
+  React.useEffect(() => {
+    if (clerkFullName) form.setValue("name", clerkFullName)
+  }, [clerkFullName, form])
+
+  async function onSubmit(data: FormValues) {
+    if (!user?.primaryEmailAddress?.emailAddress) {
+      toast.error("Authentication required", {
+        description: "Please sign in to save your profile",
+      })
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      // Get or create user
+      const userId = await getOrCreateUser({
+        email: user.primaryEmailAddress.emailAddress,
+        name: data.name,
+        username: user.username ?? undefined,
+      })
+
+      // Update profile
+      await updateProfile({
+        userId,
+        profile: {
+          name: data.name,
+          dob: data.dob,
+          visibility: data.visibility,
+          currentStatus: activeRole as ("work" | "study")[],
+          interests: data.interests,
+          media: data.media,
+          places: data.places,
+          projects: data.projects,
+          workplace: data.workplace.name || data.workplace.mapsLink ? data.workplace : undefined,
+          school: data.school.name || data.school.mapsLink ? data.school : undefined,
+        },
+      })
+
+      // Index in Qdrant for semantic search
+      await fetch('/api/index-profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      }).catch(err => {
+        console.warn('Failed to index profile in Qdrant:', err)
+        // Don't fail the whole operation if indexing fails
+      })
+
+      toast.success("Profile saved!", {
+        description: "Your profile has been updated successfully",
+      })
+    } catch (error) {
+      console.error("Error saving profile:", error)
+      toast.error("Failed to save profile", {
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const showWork = activeRole.includes("work")
@@ -348,26 +476,47 @@ export function UserInfoForm() {
           </div>
           <FieldGroup className="gap-6">
             <div className="grid gap-6 sm:grid-cols-2">
-              <Controller
-                name="name"
-                control={form.control}
-                render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid} className="gap-3">
-                    <FieldLabel htmlFor="profile-name">Name</FieldLabel>
-                    <Input
-                      {...field}
-                      id="profile-name"
-                      aria-invalid={fieldState.invalid}
-                      placeholder="Your name"
-                      autoComplete="name"
-                      className="h-11 bg-background border-border"
-                    />
-                    {fieldState.invalid && (
-                      <FieldError errors={[fieldState.error]} />
-                    )}
-                  </Field>
-                )}
-              />
+              <Field className="gap-3">
+                <FieldLabel htmlFor="profile-name">Full Name</FieldLabel>
+                <Input
+                  id="profile-name"
+                  value={clerkFullName}
+                  readOnly
+                  disabled
+                  className="h-11 bg-muted/50 border-border cursor-not-allowed"
+                />
+                <FieldDescription className="mt-1">
+                  Managed in your Clerk account.
+                </FieldDescription>
+              </Field>
+              <Field className="gap-3">
+                <FieldLabel htmlFor="profile-username">Username</FieldLabel>
+                <Input
+                  id="profile-username"
+                  value={user?.username ? `@${user.username}` : "—"}
+                  readOnly
+                  disabled
+                  className="h-11 bg-muted/50 border-border cursor-not-allowed"
+                />
+                <FieldDescription className="mt-1">
+                  Your unique Clerk handle. Others can find you with this.
+                </FieldDescription>
+              </Field>
+            </div>
+            <div className="grid gap-6 sm:grid-cols-2">
+              <Field className="gap-3">
+                <FieldLabel htmlFor="profile-email">Email</FieldLabel>
+                <Input
+                  id="profile-email"
+                  value={user?.primaryEmailAddress?.emailAddress ?? "—"}
+                  readOnly
+                  disabled
+                  className="h-11 bg-muted/50 border-border cursor-not-allowed"
+                />
+                <FieldDescription className="mt-1">
+                  Managed in your Clerk account.
+                </FieldDescription>
+              </Field>
               <Controller
                 name="dob"
                 control={form.control}
@@ -723,72 +872,79 @@ export function UserInfoForm() {
                 </div>
               </AccordionTrigger>
               <AccordionContent>
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-4">
                   {media.fields.map((item, index) => (
-                    <div key={item.id} className="flex items-start gap-2">
-                      <div className="flex-1">
-                        <Controller
-                          name={`media.${index}.title`}
-                          control={form.control}
-                          render={({ field, fieldState }) => (
-                            <Field data-invalid={fieldState.invalid}>
-                              <Input
-                                {...field}
-                                aria-invalid={fieldState.invalid}
-                                placeholder="e.g. Breaking Bad, Dune"
-                                className="bg-background border-border"
-                              />
-                              {fieldState.invalid && (
-                                <FieldError errors={[fieldState.error]} />
+                    <TexturedCard key={item.id}>
+                      <div className="flex flex-col gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="flex-1">
+                            <Controller
+                              name={`media.${index}.title`}
+                              control={form.control}
+                              render={({ field, fieldState }) => (
+                                <Field data-invalid={fieldState.invalid}>
+                                  <Input
+                                    {...field}
+                                    aria-invalid={fieldState.invalid}
+                                    placeholder="e.g. Breaking Bad, Dune"
+                                    className="bg-background border-border"
+                                  />
+                                  {fieldState.invalid && (
+                                    <FieldError errors={[fieldState.error]} />
+                                  )}
+                                </Field>
                               )}
-                            </Field>
-                          )}
-                        />
-                      </div>
-                      <Controller
-                        name={`media.${index}.type`}
-                        control={form.control}
-                        render={({ field }) => (
-                          <Select
-                            value={field.value}
-                            onValueChange={field.onChange}
+                            />
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => media.remove(index)}
+                            className="shrink-0"
                           >
-                            <SelectTrigger className="w-28">
-                              <SelectValue placeholder="Type" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="music">Music</SelectItem>
-                              <SelectItem value="movie">Movie</SelectItem>
-                              <SelectItem value="book">Book</SelectItem>
-                              <SelectItem value="novel">Novel</SelectItem>
-                              <SelectItem value="series">Series</SelectItem>
-                              <SelectItem value="podcast">Podcast</SelectItem>
-                              <SelectItem value="anime">Anime</SelectItem>
-                              <SelectItem value="game">Game</SelectItem>
-                              <SelectItem value="other">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        )}
-                      />
-                      <Controller
-                        name={`media.${index}.visibility`}
-                        control={form.control}
-                        render={({ field }) => (
-                          <VisibilitySelect
-                            value={field.value}
-                            onValueChange={field.onChange}
+                            <XIcon className="size-4" />
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Controller
+                            name={`media.${index}.type`}
+                            control={form.control}
+                            render={({ field }) => (
+                              <Select
+                                value={field.value}
+                                onValueChange={field.onChange}
+                              >
+                                <SelectTrigger className="w-40 border-border bg-background hover:bg-muted/50 transition-colors">
+                                  <SelectValue placeholder="Type" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="music">Music</SelectItem>
+                                  <SelectItem value="movie">Movie</SelectItem>
+                                  <SelectItem value="book">Book</SelectItem>
+                                  <SelectItem value="novel">Novel</SelectItem>
+                                  <SelectItem value="series">Series</SelectItem>
+                                  <SelectItem value="podcast">Podcast</SelectItem>
+                                  <SelectItem value="anime">Anime</SelectItem>
+                                  <SelectItem value="game">Game</SelectItem>
+                                  <SelectItem value="other">Other</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            )}
                           />
-                        )}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => media.remove(index)}
-                      >
-                        <XIcon className="size-4" />
-                      </Button>
-                    </div>
+                          <Controller
+                            name={`media.${index}.visibility`}
+                            control={form.control}
+                            render={({ field }) => (
+                              <VisibilitySelect
+                                value={field.value}
+                                onValueChange={field.onChange}
+                              />
+                            )}
+                          />
+                        </div>
+                      </div>
+                    </TexturedCard>
                   ))}
                   <Button
                     type="button"
@@ -844,7 +1000,7 @@ export function UserInfoForm() {
                 <div className="flex flex-col gap-4">
                   <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
                     {places.fields.map((item, index) => (
-                      <Card key={item.id} className="p-4">
+                      <TexturedCard key={item.id}>
                         <div className="flex flex-col gap-3">
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-medium">
@@ -890,7 +1046,7 @@ export function UserInfoForm() {
                                     value={field.value}
                                     onValueChange={field.onChange}
                                   >
-                                    <SelectTrigger>
+                                    <SelectTrigger className="w-full border-border bg-background hover:bg-muted/50 transition-colors">
                                       <SelectValue placeholder="Type" />
                                     </SelectTrigger>
                                     <SelectContent>
@@ -967,7 +1123,7 @@ export function UserInfoForm() {
                             )}
                           />
                         </div>
-                      </Card>
+                      </TexturedCard>
                     ))}
                   </div>
                   <Button
@@ -1025,7 +1181,7 @@ export function UserInfoForm() {
                 <div className="flex flex-col gap-4">
                   <div className="grid gap-4 sm:grid-cols-1 lg:grid-cols-2">
                     {projects.fields.map((item, index) => (
-                      <Card key={item.id} className="p-4">
+                      <TexturedCard key={item.id}>
                         <div className="flex flex-col gap-3">
                           <div className="flex items-center justify-between">
                             <span className="text-sm font-medium">
@@ -1112,7 +1268,7 @@ export function UserInfoForm() {
                             )}
                           />
                         </div>
-                      </Card>
+                      </TexturedCard>
                     ))}
                   </div>
                   <Button
@@ -1140,12 +1296,12 @@ export function UserInfoForm() {
       </div>
 
       {/* ── Actions ───────────────────────────────────────────────────── */}
-      <div className="sticky bottom-0 flex items-center justify-end gap-3 rounded-xl border bg-card px-6 py-4 shadow-sm mt-8">
+      <div className="sticky bottom-6 flex items-center justify-end gap-3 rounded-2xl border bg-card/80 backdrop-blur-md px-6 py-4 shadow-sm mt-8">
         <Button type="button" variant="outline" onClick={() => form.reset()}>
           Reset
         </Button>
-        <Button type="submit">
-          Save Profile
+        <Button type="submit" disabled={isLoading}>
+          {isLoading ? "Saving..." : "Save Profile"}
         </Button>
       </div>
     </form>
