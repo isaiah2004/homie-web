@@ -212,6 +212,7 @@ export const createUser = mutation({
     media: v.optional(v.array(v.object({
       title: v.string(),
       type: v.union(v.literal("music"), v.literal("movie"), v.literal("book"), v.literal("novel"), v.literal("series"), v.literal("podcast"), v.literal("anime"), v.literal("game"), v.literal("other")),
+      link: v.optional(v.string()),
       visibility: v.union(v.literal("close"), v.literal("friends"), v.literal("mutual"), v.literal("none")),
     }))),
     places: v.optional(v.array(v.object({

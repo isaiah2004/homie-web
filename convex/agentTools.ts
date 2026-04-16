@@ -153,6 +153,7 @@ export function buildAgentTools(ctx: ActionCtx, askerId: Id<"users">) {
         return filtered.map((h) => ({
           title: h.title,
           mediaType: h.mediaType,
+          link: h.link,
           recommendedBy: h.ownerName,
           score: h.score,
         }));

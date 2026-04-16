@@ -31,6 +31,7 @@ type ProfileItemPayload = {
   // media
   title?: string;
   mediaType?: string;
+  link?: string;
   // project
   description?: string;
   // interest
@@ -73,14 +74,16 @@ function buildItemsForUser(user: Doc<"users">): Array<{
   }
 
   for (const media of user.media ?? []) {
+    const linkPart = media.link ? `. ${media.link}` : "";
     out.push({
-      text: `${media.title} (${media.type}). recommended by ${ownerName}`,
+      text: `${media.title} (${media.type})${linkPart}. recommended by ${ownerName}`,
       payload: {
         ...ownerBase,
         entityType: "media",
         visibility: media.visibility,
         title: media.title,
         mediaType: media.type,
+        link: media.link,
       },
     });
   }
@@ -170,6 +173,7 @@ export type SearchHit = {
   tags?: string[];
   title?: string;
   mediaType?: string;
+  link?: string;
   description?: string;
   value?: string;
 };
@@ -253,6 +257,7 @@ export const searchProfileItems = internalAction({
         tags: p.tags,
         title: p.title,
         mediaType: p.mediaType,
+        link: p.link,
         description: p.description,
         value: p.value,
       });

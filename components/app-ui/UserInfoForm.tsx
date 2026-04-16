@@ -8,6 +8,7 @@ import * as z from "zod"
 import {
   BriefcaseIcon,
   GraduationCapIcon,
+  LinkIcon,
   PlusIcon,
   XIcon,
 } from "lucide-react"
@@ -112,6 +113,11 @@ const mediaSchema = z.object({
     "game",
     "other",
   ]),
+  link: z
+    .string()
+    .url("Must be a valid URL.")
+    .optional()
+    .or(z.literal("")),
   visibility: visibilityEnum,
 })
 
@@ -943,6 +949,27 @@ export function UserInfoForm() {
                             )}
                           />
                         </div>
+                        <Controller
+                          name={`media.${index}.link`}
+                          control={form.control}
+                          render={({ field, fieldState }) => (
+                            <Field data-invalid={fieldState.invalid}>
+                              <div className="flex items-center gap-2">
+                                <LinkIcon className="size-4 text-muted-foreground shrink-0" />
+                                <Input
+                                  {...field}
+                                  value={field.value ?? ""}
+                                  aria-invalid={fieldState.invalid}
+                                  placeholder="https://open.spotify.com/... or any link"
+                                  className="bg-background border-border"
+                                />
+                              </div>
+                              {fieldState.invalid && (
+                                <FieldError errors={[fieldState.error]} />
+                              )}
+                            </Field>
+                          )}
+                        />
                       </div>
                     </TexturedCard>
                   ))}
@@ -954,6 +981,7 @@ export function UserInfoForm() {
                       media.append({
                         title: "",
                         type: "music",
+                        link: "",
                         visibility: "friends",
                       })
                     }

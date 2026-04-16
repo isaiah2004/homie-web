@@ -67,6 +67,7 @@ export const users = defineTable({
       v.literal("game"),
       v.literal("other")
     ),
+    link: v.optional(v.string()),
     visibility: visibilityEnum,
   }))),
   
