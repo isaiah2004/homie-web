@@ -1,6 +1,10 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import { useQuery, useMutation, useAction } from "convex/react"
+import { api } from "@/convex/_generated/api"
+import { Id } from "@/convex/_generated/dataModel"
+import { useUser } from "@clerk/nextjs"
 import { SiteHeader } from "@/components/site-header"
 import { ChatMain } from "@/components/chat/chat-main"
 import { useVapiIntegration } from "@/components/chat/vapi-integration"
@@ -9,7 +13,8 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
-import { MessageCircle, History, Sparkles, Mic, MicOff, Menu } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
+import { MessageCircle, History, Sparkles, Mic, MicOff, Menu, Trash2 } from "lucide-react"
 
 interface Message {
   id: string
@@ -18,57 +23,91 @@ interface Message {
   timestamp: string
   senderName?: string
   isVoice?: boolean
+  role?: "user" | "assistant" | "system"
 }
 
 interface Conversation {
-  id: string
-  title: string
-  lastMessage: string
-  timestamp: string
-  messageCount: number
+  _id: Id<"conversations">
+  title: string | null
+  type: "text" | "audio" | "hybrid"
+  isActive: boolean
+  _creationTime: number
 }
 
 export default function Page() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: "1",
-      content: "Hey there! I'm Homie, your AI assistant. How can I help you today?",
-      sender: "other",
-      senderName: "Homie",
-      timestamp: "10:00 AM"
-    }
-  ])
-
-  const [conversations, setConversations] = useState<Conversation[]>([
-    {
-      id: "1",
-      title: "Project Planning",
-      lastMessage: "Let's break down the features we need",
-      timestamp: "Yesterday",
-      messageCount: 12
-    },
-    {
-      id: "2", 
-      title: "Code Review",
-      lastMessage: "The refactoring looks good to me",
-      timestamp: "2 days ago",
-      messageCount: 8
-    },
-    {
-      id: "3",
-      title: "Learning Resources",
-      lastMessage: "Here are some great tutorials for React",
-      timestamp: "Last week",
-      messageCount: 15
-    }
-  ])
-
+  const { user: clerkUser } = useUser()
+  const clerkEmail = clerkUser?.primaryEmailAddress?.emailAddress
+  const clerkUsername = clerkUser?.username ?? undefined
+  const clerkName =
+    clerkUser?.fullName ||
+    [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(" ") ||
+    clerkUser?.username ||
+    undefined
+  const [selectedConversationId, setSelectedConversationId] = useState<Id<"conversations"> | null>(null)
   const [isVoiceActive, setIsVoiceActive] = useState(false)
-  const [selectedConversation, setSelectedConversation] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(370)
   const [isResizing, setIsResizing] = useState(false)
   const sidebarRef = useRef<HTMLDivElement>(null)
+  const [convexUserId, setConvexUserId] = useState<Id<"users"> | null>(null)
+
+  // Get or create Convex user from Clerk user
+  const getOrCreateUser = useMutation(api.users.getOrCreateUser)
+
+  useEffect(() => {
+    if (clerkEmail) {
+      getOrCreateUser({
+        email: clerkEmail,
+        username: clerkUsername,
+        name: clerkName,
+      })
+        .then((id) => setConvexUserId(id as Id<"users">))
+        .catch(console.error)
+    }
+  }, [clerkEmail, clerkUsername, clerkName, getOrCreateUser])
+
+  // Fetch conversations from Convex (includes last message preview)
+  const conversations = useQuery(api.conversations.getConversationsWithLastMessage,
+    convexUserId ? { userId: convexUserId, isActive: true } : "skip"
+  )
+
+  // Fetch messages for selected conversation
+  const conversationMessages = useQuery(api.conversationMessages.getMessages,
+    selectedConversationId ? { conversationId: selectedConversationId } : "skip"
+  )
+
+  // Mutations
+  const createConversation = useMutation(api.conversations.createConversation)
+  const deleteConversation = useMutation(api.conversations.deleteConversation)
+  const createMessage = useMutation(api.conversationMessages.createMessage)
+  const generateAIResponse = useAction(api.ai.generateAIResponse)
+
+  // Convert Convex messages to UI format
+  const messages: Message[] = (conversationMessages || []).map((msg: any) => ({
+    id: msg._id,
+    content: msg.content || "",
+    sender: msg.role === "user" ? "user" : "other",
+    senderName: msg.role === "assistant" ? "Homie" : undefined,
+    timestamp: new Date(msg._creationTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    role: msg.role
+  }))
+
+  // Create new conversation mutation
+  const startNewConversation = async () => {
+    if (!convexUserId) return
+    
+    try {
+      const newConversationId = await createConversation({
+        userId: convexUserId,
+        type: "text",
+        title: "New Chat"
+      })
+      setSelectedConversationId(newConversationId)
+    } catch (error) {
+      console.error("Failed to create conversation:", error)
+    }
+  }
+
 
   // Vapi integration for Homie chatbot
   const vapiConfig = {
@@ -97,44 +136,65 @@ export default function Page() {
     isActive: isVoiceActive,
   })
 
-  const handleSendMessage = (content: string) => {
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      content,
-      sender: "user",
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const handleSendMessage = async (content: string) => {
+    if (!convexUserId) return
+    
+    // Ensure we have a conversation
+    let conversationId = selectedConversationId
+    if (!conversationId) {
+      try {
+        conversationId = await createConversation({
+          userId: convexUserId,
+          type: isVoiceActive ? "hybrid" : "text",
+          title: content.slice(0, 50) || "New Chat"
+        })
+        setSelectedConversationId(conversationId)
+      } catch (error) {
+        console.error("Failed to create conversation:", error)
+        return
+      }
     }
 
-    setMessages(prev => [...prev, userMessage])
-
-    // Simulate Homie response (replace with actual AI integration)
-    setTimeout(() => {
-      const homieResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        content: `I understand you're saying: "${content}". Let me help you with that!`,
-        sender: "other",
-        senderName: "Homie",
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      }
-      setMessages(prev => [...prev, homieResponse])
-    }, 1000)
+    // Create user message
+    try {
+      await createMessage({
+        conversationId,
+        role: "user",
+        content
+      })
+    } catch (error) {
+      console.error("Failed to create message:", error)
+      return
+    }
 
     // Send to Vapi if voice is active
     if (isVoiceActive) {
       sendTextMessage(content)
+    } else {
+      // Generate AI response using Vercel AI SDK
+      try {
+        await generateAIResponse({
+          conversationId: conversationId,
+          userMessage: content,
+        })
+      } catch (error) {
+        console.error("Failed to generate AI response:", error)
+      }
     }
   }
 
-  const handleHomieResponse = (response: string) => {
-    const homieMessage: Message = {
-      id: Date.now().toString(),
-      content: response,
-      sender: "other",
-      senderName: "Homie",
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isVoice: true
+  const handleHomieResponse = async (response: string) => {
+    if (!convexUserId || !selectedConversationId) return
+    
+    try {
+      await createMessage({
+        conversationId: selectedConversationId,
+        role: "assistant",
+        content: response
+      })
+    } catch (error) {
+      console.error("Failed to create assistant message:", error)
     }
-    setMessages(prev => [...prev, homieMessage])
   }
 
   const handleVoiceToggle = () => {
@@ -183,21 +243,25 @@ export default function Page() {
   }, [isResizing])
 
 
-  const loadConversation = (conversationId: string) => {
-    setSelectedConversation(conversationId)
-    // Load conversation messages from backend
-    console.log("Loading conversation:", conversationId)
+  const loadConversation = (conversationId: Id<"conversations">) => {
+    setSelectedConversationId(conversationId)
   }
 
-  const startNewConversation = () => {
-    setMessages([{
-      id: "1",
-      content: "Hey there! I'm Homie, your AI assistant. How can I help you today?",
-      sender: "other",
-      senderName: "Homie",
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    }])
-    setSelectedConversation(null)
+  const handleDeleteConversation = async (
+    conversationId: Id<"conversations">,
+    e: React.MouseEvent
+  ) => {
+    e.stopPropagation()
+    if (!window.confirm("Delete this conversation? This cannot be undone.")) return
+
+    try {
+      await deleteConversation({ conversationId })
+      if (selectedConversationId === conversationId) {
+        setSelectedConversationId(null)
+      }
+    } catch (error) {
+      console.error("Failed to delete conversation:", error)
+    }
   }
 
   const homieChat = {
@@ -223,7 +287,7 @@ export default function Page() {
           className={`flex flex-col border-r bg-background transition-all duration-200 ease-out ${sidebarOpen ? 'min-w-0' : 'w-0 overflow-hidden border-0'}`}
           style={{ width: sidebarOpen ? `${sidebarWidth}px` : '0px' }}
         >
-          <div className="flex items-center justify-between p-4 border-b shrink-0">
+          <div className="flex items-center justify-between px-4 py-3 border-b shrink-0 h-[65px]">
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <History className="h-5 w-5" />
               Conversations
@@ -235,32 +299,63 @@ export default function Page() {
 
           <ScrollArea className="flex-1">
             <div className="p-2 space-y-2">
-              {conversations.map((conversation) => (
-                <div
-                  key={conversation.id}
-                  className="group cursor-pointer rounded-lg border p-3 transition-all hover:bg-muted/50 hover:border-primary/20"
-                  onClick={() => loadConversation(conversation.id)}
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium truncate" title={conversation.title}>
-                        {conversation.title}
-                      </h3>
-                      <p className="text-sm text-muted-foreground truncate" title={conversation.lastMessage}>
-                        {conversation.lastMessage}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {conversation.timestamp}
-                      </span>
-                      <Badge variant="secondary" className="text-xs opacity-0 group-hover:opacity-100 transition-opacity">
-                        {conversation.messageCount}
-                      </Badge>
+              {conversations === undefined ? (
+                Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="rounded-lg border p-3">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-1 min-w-0 space-y-2">
+                        <Skeleton className="h-4 w-2/3" />
+                        <Skeleton className="h-3 w-4/5" />
+                      </div>
+                      <Skeleton className="h-3 w-12 shrink-0" />
                     </div>
                   </div>
+                ))
+              ) : conversations.length > 0 ? (
+                conversations.map((conversation: any, index: number) => {
+                  const lastMessage = conversation.lastMessage
+
+                  return (
+                    <div
+                      key={conversation._id}
+                      className={`group cursor-pointer rounded-lg border p-3 transition-all hover:bg-muted/50 hover:border-primary/20 animate-in fade-in-0 slide-in-from-top-2 fill-mode-both duration-300 ${
+                        selectedConversationId === conversation._id ? "bg-muted/50 border-primary/20" : ""
+                      }`}
+                      style={{ animationDelay: `${index * 60}ms` }}
+                      onClick={() => loadConversation(conversation._id)}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium truncate" title={conversation.title || "Untitled"}>
+                            {conversation.title || "Untitled"}
+                          </h3>
+                          <p className="text-sm text-muted-foreground truncate" title={lastMessage?.content || "No messages yet"}>
+                            {lastMessage?.content || "No messages yet"}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span className="text-xs text-muted-foreground whitespace-nowrap">
+                            {new Date(conversation._creationTime).toLocaleDateString()}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                            onClick={(e) => handleDeleteConversation(conversation._id, e)}
+                            aria-label="Delete conversation"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="text-center text-sm text-muted-foreground py-8">
+                  No conversations yet. Start a new chat!
                 </div>
-              ))}
+              )}
             </div>
           </ScrollArea>
         </div>
@@ -279,23 +374,21 @@ export default function Page() {
 
         {/* Main Chat Area */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex-1">
-            <ChatMain
-              chat={homieChat}
-              messages={messages}
-              onSendMessage={handleSendMessage}
-              onVoiceToggle={handleVoiceToggle}
-              sidebarToggle={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setSidebarOpen(!sidebarOpen)}
-                >
-                  <Menu className="h-4 w-4" />
-                </Button>
-              }
-            />
-          </div>
+          <ChatMain
+            chat={homieChat}
+            messages={messages}
+            onSendMessage={handleSendMessage}
+            onVoiceToggle={handleVoiceToggle}
+            sidebarToggle={
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSidebarOpen(!sidebarOpen)}
+              >
+                <Menu className="h-4 w-4" />
+              </Button>
+            }
+          />
 
           {/* Homie Status Bar */}
           <div className="border-t bg-muted/30 p-3 sm:p-4 shrink-0">

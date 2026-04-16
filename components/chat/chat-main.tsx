@@ -99,9 +99,9 @@ export function ChatMain({
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
       {/* Chat Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b">
+      <div className="flex items-center justify-between px-4 py-3 border-b shrink-0 h-[65px]">
         <div className="flex items-center gap-3">
           {sidebarToggle}
           {onBackToList && (
@@ -172,7 +172,7 @@ export function ChatMain({
       </div>
 
       {/* Messages Area */}
-      <ScrollArea ref={scrollAreaRef} className="flex-1 p-4">
+      <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0 p-4">
         <div className="space-y-4">
           {messages.map((message) => (
             <div
@@ -207,7 +207,7 @@ export function ChatMain({
       </ScrollArea>
 
       {/* Message Input */}
-      <div className="p-4 border-t">
+      <div className="p-4 border-t shrink-0">
         <div className="flex items-center gap-2">
           <Button
             variant="ghost"

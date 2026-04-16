@@ -47,9 +47,9 @@ import {
   File,
   BellDot,
   Smile,
-  CreditCard,
   Bell,
   LogOut,
+  MessageSquare,
 } from "lucide-react"
 
 import Link from "next/link"
@@ -64,6 +64,11 @@ const data = {
       title: "Friends",
       url: "/dashboard/friends",
       icon: <Users />,
+    },
+    {
+      title: "Chats",
+      url: "/dashboard/chats",
+      icon: <MessageSquare />,
     },
     {
       title: "Profile",
@@ -238,17 +243,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuGroup>
-                    <DropdownMenuItem onClick={() => window.open('https://dashboard.clerk.com', '_blank')}>
-                      <User className="mr-2 h-4 w-4" />
-                      Account
+                    <DropdownMenuItem asChild>
+                      <Link href="/dashboard/profile" className="cursor-pointer">
+                        <User className="mr-2 h-4 w-4" />
+                        Account
+                      </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => window.open('https://dashboard.clerk.com', '_blank')}>
-                      <CreditCard className="mr-2 h-4 w-4" />
-                      Billing
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onClick={() => window.open('https://dashboard.clerk.com', '_blank')}>
-                      <Bell className="mr-2 h-4 w-4" />
-                      Notifications
+                    <DropdownMenuItem asChild>
+                      <Link href="/dashboard/notifications" className="cursor-pointer">
+                        <Bell className="mr-2 h-4 w-4" />
+                        Notifications
+                      </Link>
                     </DropdownMenuItem>
                   </DropdownMenuGroup>
                   <DropdownMenuSeparator />

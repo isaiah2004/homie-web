@@ -45,8 +45,8 @@ export function ChatSidebar({
   return (
     <div className="flex h-full w-80 flex-col border-r bg-background">
       {/* Header */}
-      <div className="p-4 border-b">
-        <div className="flex items-center justify-between mb-3">
+      <div className="px-4 py-3 border-b flex flex-col">
+        <div className="flex items-center justify-between mb-2">
           <h2 className="text-lg font-semibold">Messages</h2>
           <Button onClick={onNewChat} size="sm" className="gap-2">
             <Plus className="h-4 w-4" />
