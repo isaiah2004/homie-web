@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
+import { MessageContent } from "@/components/chat/message-content"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -191,7 +192,7 @@ export function ChatMain({
                     {message.senderName}
                   </p>
                 )}
-                <p className="text-sm">{message.content}</p>
+                <MessageContent content={message.content} isUser={message.sender === "user"} />
                 <div className="flex items-center justify-between mt-1">
                   <p className="text-xs opacity-70">{message.timestamp}</p>
                   {message.isVoice && (
