@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { vapi } from "@vapi-ai/web"
+import Vapi from "@vapi-ai/web"
 
 interface VapiConfig {
   apiKey: string
@@ -32,7 +32,7 @@ export function useVapiIntegration({
     // Initialize Vapi
     if (!isInitialized && config.apiKey) {
       try {
-        vapiRef.current = vapi(config.apiKey)
+        vapiRef.current = new Vapi(config.apiKey)
         
         // Set up event listeners
         vapiRef.current.on("call-start", () => {
