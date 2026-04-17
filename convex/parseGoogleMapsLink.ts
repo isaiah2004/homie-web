@@ -17,6 +17,17 @@ const PLACE_TYPES = [
 
 type PlaceType = (typeof PLACE_TYPES)[number];
 
+const ALLOWED_SHORT_HOSTS = new Set(["goo.gl", "maps.app.goo.gl"]);
+
+function isGoogleMapsHost(hostname: string): boolean {
+  return (
+    hostname === "www.google.com" ||
+    hostname === "google.com" ||
+    hostname.endsWith(".google.com") ||
+    /^(www\.)?google\.co(\.\w+)?$/.test(hostname)
+  );
+}
+
 export const parseGoogleMapsLink = action({
   args: { url: v.string() },
   returns: v.object({
@@ -35,29 +46,43 @@ export const parseGoogleMapsLink = action({
     ),
     mapsLink: v.string(),
   }),
-  handler: async (_ctx, { url }) => {
+  handler: async (ctx, { url }) => {
+    // Auth check
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Authentication required.");
+
     let resolvedUrl = url.trim();
 
-    // 1. Resolve shortened URLs by following redirects
-    if (
-      resolvedUrl.includes("goo.gl/") ||
-      resolvedUrl.includes("maps.app.goo.gl")
-    ) {
+    // Validate URL format
+    let urlObj: URL;
+    try {
+      urlObj = new URL(resolvedUrl);
+    } catch {
+      throw new Error("The provided text is not a valid URL.");
+    }
+
+    // 1. Resolve shortened URLs — only allow known Google short domains
+    if (ALLOWED_SHORT_HOSTS.has(urlObj.hostname)) {
       const res = await fetch(resolvedUrl, { redirect: "follow" });
       resolvedUrl = res.url;
+      try {
+        urlObj = new URL(resolvedUrl);
+      } catch {
+        throw new Error("Failed to resolve shortened URL.");
+      }
+      // Verify redirect landed on a Google domain
+      if (!isGoogleMapsHost(urlObj.hostname)) {
+        throw new Error("Shortened link did not resolve to Google Maps.");
+      }
     }
 
     // 2. Validate it's a Google Maps URL
-    if (
-      !resolvedUrl.includes("google.com/maps") &&
-      !resolvedUrl.includes("google.co") // regional domains like google.co.uk
-    ) {
+    if (!isGoogleMapsHost(urlObj.hostname) || !urlObj.pathname.startsWith("/maps")) {
       throw new Error("Not a valid Google Maps link.");
     }
 
     // 3. Extract place name from URL path
-    const parsed = new URL(resolvedUrl);
-    const pathname = parsed.pathname;
+    const pathname = urlObj.pathname;
     let name = "";
 
     // /maps/place/Place+Name/...
@@ -66,9 +91,17 @@ export const parseGoogleMapsLink = action({
       name = decodeURIComponent(placeMatch[1].replace(/\+/g, " "));
     }
 
+    // /maps/search/Search+Query/...
+    if (!name) {
+      const searchMatch = pathname.match(/\/maps\/search\/([^/@]+)/);
+      if (searchMatch) {
+        name = decodeURIComponent(searchMatch[1].replace(/\+/g, " "));
+      }
+    }
+
     // Fallback: ?q= param
     if (!name) {
-      const qParam = parsed.searchParams.get("q");
+      const qParam = urlObj.searchParams.get("q");
       if (qParam) name = qParam;
     }
 
@@ -78,21 +111,24 @@ export const parseGoogleMapsLink = action({
       );
     }
 
+    // Extract coordinates for location-biased search
+    const coordMatch = resolvedUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+
     // 4. Try Google Places API for rich details
     const apiKey = process.env.GOOGLE_PLACES_API_KEY;
     if (apiKey) {
       try {
-        const result = await fetchPlaceDetails(name, apiKey);
+        const result = await fetchPlaceDetails(name, apiKey, coordMatch);
         if (result) {
           return {
             name: result.displayName,
-            address: result.formattedAddress,
+            address: result.formattedAddress || undefined,
             type: mapGoogleType(result.types),
             mapsLink: result.googleMapsUri ?? resolvedUrl,
           };
         }
-      } catch {
-        // Fall through to URL-only parsing
+      } catch (err) {
+        console.warn("Google Places API call failed, falling back to URL parsing:", err);
       }
     }
 
@@ -118,7 +154,26 @@ interface PlaceResult {
 async function fetchPlaceDetails(
   textQuery: string,
   apiKey: string,
+  coordMatch: RegExpMatchArray | null,
 ): Promise<PlaceResult | null> {
+  const body: Record<string, unknown> = {
+    textQuery,
+    maxResultCount: 1,
+  };
+
+  // Add location bias from URL coordinates for more accurate results
+  if (coordMatch) {
+    body.locationBias = {
+      circle: {
+        center: {
+          latitude: parseFloat(coordMatch[1]),
+          longitude: parseFloat(coordMatch[2]),
+        },
+        radius: 500.0,
+      },
+    };
+  }
+
   // Places API (New) — Text Search
   const res = await fetch(
     "https://places.googleapis.com/v1/places:searchText",
@@ -130,10 +185,7 @@ async function fetchPlaceDetails(
         "X-Goog-FieldMask":
           "places.displayName,places.formattedAddress,places.types,places.googleMapsUri",
       },
-      body: JSON.stringify({
-        textQuery,
-        maxResultCount: 1,
-      }),
+      body: JSON.stringify(body),
     },
   );
 
@@ -145,9 +197,9 @@ async function fetchPlaceDetails(
 
   return {
     displayName:
-      typeof place.displayName === "object"
+      place.displayName && typeof place.displayName === "object"
         ? place.displayName.text
-        : place.displayName,
+        : (place.displayName ?? ""),
     formattedAddress: place.formattedAddress ?? "",
     types: place.types ?? [],
     googleMapsUri: place.googleMapsUri,
@@ -188,16 +240,16 @@ function mapGoogleType(types: string[]): PlaceType {
 function inferPlaceType(name: string): PlaceType {
   const lower = name.toLowerCase();
   const rules: Array<[RegExp, PlaceType]> = [
-    [/\b(cafe|coffee|starbucks|dunkin|peet)\b/i, "cafe"],
+    [/\b(cafe|coffee|starbucks|dunkin|peet)\b/, "cafe"],
     [
-      /\b(restaurant|diner|bistro|grill|eatery|sushi|pizza|burger|taco|noodle|ramen|bbq|steakhouse)\b/i,
+      /\b(restaurant|diner|bistro|grill|eatery|sushi|pizza|burger|taco|noodle|ramen|bbq|steakhouse)\b/,
       "restaurant",
     ],
-    [/\b(bar|pub|brewery|taproom|lounge|cocktail|tavern)\b/i, "bar"],
-    [/\b(park|garden|trail|nature|reserve|botanical)\b/i, "park"],
-    [/\b(gym|fitness|crossfit|yoga|pilates|sport)\b/i, "gym"],
-    [/\b(library)\b/i, "library"],
-    [/\b(store|shop|market|mall|outlet|boutique|depot)\b/i, "store"],
+    [/\b(bar|pub|brewery|taproom|lounge|cocktail|tavern)\b/, "bar"],
+    [/\b(park|garden|trail|nature|reserve|botanical)\b/, "park"],
+    [/\b(gym|fitness|crossfit|yoga|pilates|sport)\b/, "gym"],
+    [/\b(library)\b/, "library"],
+    [/\b(store|shop|market|mall|outlet|boutique|depot)\b/, "store"],
   ];
   for (const [pattern, type] of rules) {
     if (pattern.test(lower)) return type;
