@@ -200,7 +200,7 @@ export default function Page() {
   const handleVoiceToggle = () => {
     setIsVoiceActive(!isVoiceActive)
     if (!isVoiceActive) {
-      startCall()
+      startCall(undefined, convexUserId ? { userId: convexUserId } : undefined)
     } else {
       stopCall()
     }
