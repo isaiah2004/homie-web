@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Controller, useFieldArray, useForm } from "react-hook-form"
+import { Controller, useFieldArray, useForm, useWatch } from "react-hook-form"
 import { toast } from "sonner"
 import * as z from "zod"
 import {
@@ -46,6 +46,12 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import { SpotifyPicker } from "@/components/app-ui/SpotifyPicker"
+import { ItunesPicker } from "@/components/app-ui/ItunesPicker"
+import { TvMazePicker } from "@/components/app-ui/TvMazePicker"
+import { OpenLibraryPicker } from "@/components/app-ui/OpenLibraryPicker"
+import { JikanPicker } from "@/components/app-ui/JikanPicker"
+import { CheapSharkPicker } from "@/components/app-ui/CheapSharkPicker"
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -99,6 +105,15 @@ const schoolSchema = z.object({
   visibility: sensitiveVisibilityEnum,
 })
 
+const externalSourceEnum = z.enum([
+  "spotify",
+  "itunes",
+  "tvmaze",
+  "openlibrary",
+  "jikan",
+  "cheapshark",
+])
+
 const mediaSchema = z.object({
   title: z.string().min(1, "Title is required."),
   type: z.enum([
@@ -113,6 +128,11 @@ const mediaSchema = z.object({
     "other",
   ]),
   visibility: visibilityEnum,
+  externalSource: externalSourceEnum.optional(),
+  externalId: z.string().optional(),
+  externalKind: z.string().optional(),
+  subtitle: z.string().optional(),
+  imageUrl: z.string().optional(),
 })
 
 const projectSchema = z.object({
@@ -312,6 +332,289 @@ function TexturedCard({
   )
 }
 
+// ── Media row ────────────────────────────────────────────────────────────────
+//
+// Music/podcast rows use the Spotify picker so users attach a real provider
+// id + artwork. Other types stay free-text until their own provider lands.
+
+type MediaType = z.infer<typeof mediaSchema>["type"]
+type MusicScope = "track" | "album" | "artist"
+
+const MUSIC_SCOPE_LABELS: Record<MusicScope, string> = {
+  track: "Song",
+  album: "Album",
+  artist: "Artist",
+}
+
+type PickerValue = {
+  title?: string
+  subtitle?: string
+  imageUrl?: string
+}
+
+type ApplyPick = (pick: {
+  source: "spotify" | "itunes" | "tvmaze" | "openlibrary" | "jikan" | "cheapshark"
+  kind: string
+  id: string
+  title: string
+  subtitle?: string
+  imageUrl?: string
+}) => void
+
+function renderPickerFor(
+  type: MediaType,
+  musicScope: MusicScope,
+  value: PickerValue,
+  onSelect: ApplyPick,
+  onClear: () => void,
+  index: number,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  form: any,
+): React.ReactNode {
+  if (type === "music") {
+    return (
+      <SpotifyPicker
+        kinds={[musicScope]}
+        value={value}
+        onSelect={onSelect}
+        onClear={onClear}
+        placeholder={`Search for a ${MUSIC_SCOPE_LABELS[musicScope].toLowerCase()}…`}
+      />
+    )
+  }
+  if (type === "podcast") {
+    return (
+      <SpotifyPicker
+        kinds={["show"]}
+        value={value}
+        onSelect={onSelect}
+        onClear={onClear}
+        placeholder="Search podcasts on Spotify…"
+      />
+    )
+  }
+  if (type === "movie") {
+    return (
+      <ItunesPicker value={value} onSelect={onSelect} onClear={onClear} />
+    )
+  }
+  if (type === "series") {
+    return (
+      <TvMazePicker value={value} onSelect={onSelect} onClear={onClear} />
+    )
+  }
+  if (type === "book" || type === "novel") {
+    return (
+      <OpenLibraryPicker
+        value={value}
+        onSelect={onSelect}
+        onClear={onClear}
+      />
+    )
+  }
+  if (type === "anime") {
+    return (
+      <JikanPicker value={value} onSelect={onSelect} onClear={onClear} />
+    )
+  }
+  if (type === "game") {
+    return (
+      <CheapSharkPicker value={value} onSelect={onSelect} onClear={onClear} />
+    )
+  }
+  return (
+    <Controller
+      name={`media.${index}.title`}
+      control={form.control}
+      render={({ field, fieldState }) => (
+        <Field data-invalid={fieldState.invalid}>
+          <Input
+            {...field}
+            aria-invalid={fieldState.invalid}
+            placeholder="e.g. custom entry"
+            className="bg-background border-border"
+          />
+          {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
+        </Field>
+      )}
+    />
+  )
+}
+
+function MediaRow({
+  index,
+  form,
+  onRemove,
+}: {
+  index: number
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  form: any
+  onRemove: () => void
+}) {
+  const type = useWatch({
+    control: form.control,
+    name: `media.${index}.type`,
+  }) as MediaType
+  const title = useWatch({
+    control: form.control,
+    name: `media.${index}.title`,
+  }) as string | undefined
+  const subtitle = useWatch({
+    control: form.control,
+    name: `media.${index}.subtitle`,
+  }) as string | undefined
+  const imageUrl = useWatch({
+    control: form.control,
+    name: `media.${index}.imageUrl`,
+  }) as string | undefined
+  const externalKind = useWatch({
+    control: form.control,
+    name: `media.${index}.externalKind`,
+  }) as string | undefined
+
+  const [musicScope, setMusicScope] = React.useState<MusicScope>(() => {
+    if (
+      externalKind === "track" ||
+      externalKind === "album" ||
+      externalKind === "artist"
+    ) {
+      return externalKind
+    }
+    return "track"
+  })
+
+  const applyPick = (pick: {
+    source: "spotify" | "itunes" | "tvmaze" | "openlibrary" | "jikan" | "cheapshark"
+    kind: string
+    id: string
+    title: string
+    subtitle?: string
+    imageUrl?: string
+  }) => {
+    form.setValue(`media.${index}.title`, pick.title, { shouldDirty: true })
+    form.setValue(`media.${index}.subtitle`, pick.subtitle, {
+      shouldDirty: true,
+    })
+    form.setValue(`media.${index}.imageUrl`, pick.imageUrl, {
+      shouldDirty: true,
+    })
+    form.setValue(`media.${index}.externalSource`, pick.source, {
+      shouldDirty: true,
+    })
+    form.setValue(`media.${index}.externalId`, pick.id, { shouldDirty: true })
+    form.setValue(`media.${index}.externalKind`, pick.kind, {
+      shouldDirty: true,
+    })
+  }
+
+  const clearPick = React.useCallback(() => {
+    form.setValue(`media.${index}.title`, "", { shouldDirty: true })
+    form.setValue(`media.${index}.subtitle`, undefined, { shouldDirty: true })
+    form.setValue(`media.${index}.imageUrl`, undefined, { shouldDirty: true })
+    form.setValue(`media.${index}.externalSource`, undefined, {
+      shouldDirty: true,
+    })
+    form.setValue(`media.${index}.externalId`, undefined, {
+      shouldDirty: true,
+    })
+    form.setValue(`media.${index}.externalKind`, undefined, {
+      shouldDirty: true,
+    })
+  }, [form, index])
+
+  // Changing media.type changes which provider the picker talks to (or swaps
+  // to free-text). Any previously-attached provider metadata becomes stale
+  // and could produce rows like `type: "other"` but `externalSource:
+  // "spotify"`. Clear the pick when the type changes (skip initial mount).
+  const prevTypeRef = React.useRef(type)
+  React.useEffect(() => {
+    if (prevTypeRef.current !== type) {
+      clearPick()
+      prevTypeRef.current = type
+    }
+  }, [type, clearPick])
+
+  return (
+    <TexturedCard>
+      <div className="flex flex-col gap-4 md:flex-row md:items-start">
+        <div className="flex flex-col gap-2 md:w-44 md:shrink-0">
+          <Controller
+            name={`media.${index}.type`}
+            control={form.control}
+            render={({ field }) => (
+              <Select value={field.value} onValueChange={field.onChange}>
+                <SelectTrigger className="w-full border-border bg-background hover:bg-muted/50 transition-colors">
+                  <SelectValue placeholder="Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="music">Music</SelectItem>
+                  <SelectItem value="movie">Movie</SelectItem>
+                  <SelectItem value="book">Book</SelectItem>
+                  <SelectItem value="novel">Novel</SelectItem>
+                  <SelectItem value="series">Series</SelectItem>
+                  <SelectItem value="podcast">Podcast</SelectItem>
+                  <SelectItem value="anime">Anime</SelectItem>
+                  <SelectItem value="game">Game</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+          />
+          <Controller
+            name={`media.${index}.visibility`}
+            control={form.control}
+            render={({ field }) => (
+              <VisibilitySelect
+                value={field.value}
+                onValueChange={field.onChange}
+              />
+            )}
+          />
+        </div>
+
+        <div className="min-w-0 flex-1 space-y-2">
+          {type === "music" && (
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              value={musicScope}
+              onValueChange={(v) => {
+                if (v === "track" || v === "album" || v === "artist") {
+                  setMusicScope(v)
+                }
+              }}
+            >
+              <ToggleGroupItem value="track">Song</ToggleGroupItem>
+              <ToggleGroupItem value="album">Album</ToggleGroupItem>
+              <ToggleGroupItem value="artist">Artist</ToggleGroupItem>
+            </ToggleGroup>
+          )}
+          {renderPickerFor(
+            type,
+            musicScope,
+            { title, subtitle, imageUrl },
+            applyPick,
+            clearPick,
+            index,
+            form,
+          )}
+        </div>
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={onRemove}
+          className="shrink-0 hover:bg-destructive/10 hover:text-destructive"
+        >
+          <XIcon className="size-4" />
+        </Button>
+      </div>
+    </TexturedCard>
+  )
+}
+
 // ── Main form ────────────────────────────────────────────────────────────────
 
 export function UserInfoForm() {
@@ -423,8 +726,8 @@ export function UserInfoForm() {
           media: data.media,
           places: data.places,
           projects: data.projects,
-          workplace: data.workplace.name || data.workplace.mapsLink ? data.workplace : undefined,
-          school: data.school.name || data.school.mapsLink ? data.school : undefined,
+          workplace: (data.workplace.name || data.workplace.mapsLink) ? data.workplace : undefined,
+          school: (data.school.name || data.school.mapsLink) ? data.school : undefined,
         },
       })
 
@@ -756,7 +1059,7 @@ export function UserInfoForm() {
       {/* ── Collapsible list sections (bento accordion grid) ──────── */}
       <div className="grid gap-8 md:grid-cols-2">
         {/* Interests */}
-        <SectionCard>
+        <SectionCard className="md:col-span-2">
           <Accordion type="single" collapsible defaultValue="interests" className="border-none">
             <AccordionItem value="interests" className="border-none bg-transparent">
               <AccordionTrigger className="px-0 pt-0 hover:no-underline group [&>svg]:hidden">
@@ -845,7 +1148,7 @@ export function UserInfoForm() {
         </SectionCard>
 
         {/* Media */}
-        <SectionCard>
+        <SectionCard className="md:col-span-2">
           <Accordion type="single" collapsible defaultValue="media" className="border-none">
             <AccordionItem value="media" className="border-none bg-transparent">
               <AccordionTrigger className="px-0 pt-0 hover:no-underline group [&>svg]:hidden">
@@ -874,77 +1177,12 @@ export function UserInfoForm() {
               <AccordionContent>
                 <div className="flex flex-col gap-4">
                   {media.fields.map((item, index) => (
-                    <TexturedCard key={item.id}>
-                      <div className="flex flex-col gap-3">
-                        <div className="flex items-start gap-3">
-                          <div className="flex-1">
-                            <Controller
-                              name={`media.${index}.title`}
-                              control={form.control}
-                              render={({ field, fieldState }) => (
-                                <Field data-invalid={fieldState.invalid}>
-                                  <Input
-                                    {...field}
-                                    aria-invalid={fieldState.invalid}
-                                    placeholder="e.g. Breaking Bad, Dune"
-                                    className="bg-background border-border"
-                                  />
-                                  {fieldState.invalid && (
-                                    <FieldError errors={[fieldState.error]} />
-                                  )}
-                                </Field>
-                              )}
-                            />
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => media.remove(index)}
-                            className="shrink-0"
-                          >
-                            <XIcon className="size-4" />
-                          </Button>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <Controller
-                            name={`media.${index}.type`}
-                            control={form.control}
-                            render={({ field }) => (
-                              <Select
-                                value={field.value}
-                                onValueChange={field.onChange}
-                              >
-                                <SelectTrigger className="w-40 border-border bg-background hover:bg-muted/50 transition-colors">
-                                  <SelectValue placeholder="Type" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="music">Music</SelectItem>
-                                  <SelectItem value="movie">Movie</SelectItem>
-                                  <SelectItem value="book">Book</SelectItem>
-                                  <SelectItem value="novel">Novel</SelectItem>
-                                  <SelectItem value="series">Series</SelectItem>
-                                  <SelectItem value="podcast">Podcast</SelectItem>
-                                  <SelectItem value="anime">Anime</SelectItem>
-                                  <SelectItem value="game">Game</SelectItem>
-                                  <SelectItem value="other">Other</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            )}
-                          />
-                          <Controller
-                            name={`media.${index}.visibility`}
-                            control={form.control}
-                            render={({ field }) => (
-                              <VisibilitySelect
-                                value={field.value}
-                                onValueChange={field.onChange}
-                              />
-                            )}
-                          />
-                        </div>
-                      </div>
-                    </TexturedCard>
+                    <MediaRow
+                      key={item.id}
+                      index={index}
+                      form={form}
+                      onRemove={() => media.remove(index)}
+                    />
                   ))}
                   <Button
                     type="button"
@@ -955,6 +1193,11 @@ export function UserInfoForm() {
                         title: "",
                         type: "music",
                         visibility: "friends",
+                        externalSource: undefined,
+                        externalId: undefined,
+                        externalKind: undefined,
+                        subtitle: undefined,
+                        imageUrl: undefined,
                       })
                     }
                     className="w-fit"

@@ -34,6 +34,18 @@ const vapiCallStatusEnum = v.union(
 // Metadata value type (replaces v.any())
 const metadataValue = v.union(v.string(), v.number(), v.boolean(), v.null());
 
+// External content provider for items attached to a profile (songs, movies,
+// books, games, etc). A missing value means the item is a free-text entry
+// the user typed themselves with no provider-backed id.
+const externalSourceEnum = v.union(
+  v.literal("spotify"),
+  v.literal("itunes"),
+  v.literal("tvmaze"),
+  v.literal("openlibrary"),
+  v.literal("jikan"),
+  v.literal("cheapshark"),
+);
+
 // User profiles table
 export const users = defineTable({
   name: v.string(),
@@ -68,6 +80,14 @@ export const users = defineTable({
       v.literal("other")
     ),
     visibility: visibilityEnum,
+    // Provider-backed item metadata. All optional so legacy free-text entries
+    // remain valid. `externalKind` disambiguates within a source (Spotify
+    // returns track|album|artist|show under the same "music"/"podcast" type).
+    externalSource: v.optional(externalSourceEnum),
+    externalId: v.optional(v.string()),
+    externalKind: v.optional(v.string()),
+    subtitle: v.optional(v.string()),
+    imageUrl: v.optional(v.string()),
   }))),
   
   places: v.optional(v.array(v.object({
@@ -276,6 +296,16 @@ export const vapiCalls = defineTable({
   .index("by_user_and_status", ["userId", "status"])
   .index("by_user_and_startedAt", ["userId", "startedAt"]); // NEW: time-based queries
 
+// Cached Spotify client-credentials access token. Exactly one row is kept;
+// the token is refreshed on demand when it is missing or within its skew
+// window of expiry. Stored in a table (rather than in-memory) because
+// Convex actions are stateless across invocations.
+export const spotifyAuth = defineTable({
+  accessToken: v.string(),
+  // Absolute epoch-ms at which the token expires.
+  expiresAt: v.number(),
+});
+
 export default defineSchema({
   users,
   friends,
@@ -286,4 +316,5 @@ export default defineSchema({
   conversations,
   conversationMessages,
   vapiCalls,
+  spotifyAuth,
 });

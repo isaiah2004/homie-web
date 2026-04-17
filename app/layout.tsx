@@ -4,7 +4,7 @@ import type { Metadata } from "next"
 import { ThemeProvider } from "@/components/theme-provider"
 import { ClerkProvider } from "@clerk/nextjs"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { ConvexClientProvider } from "@/components/convex-provider"
+import ConvexClientProvider from "@/components/ConvexClientProvider"
 
 import { cn } from "@/lib/utils"
 import "./globals.css"
