@@ -8,13 +8,15 @@ import { useUser } from "@clerk/nextjs"
 import { SiteHeader } from "@/components/site-header"
 import { ChatMain } from "@/components/chat/chat-main"
 import { useVapiIntegration } from "@/components/chat/vapi-integration"
+import { VoiceOverlay } from "@/components/chat/voice-overlay"
+import { VoiceConversation } from "@/components/chat/voice-conversation"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
-import { MessageCircle, History, Sparkles, Mic, MicOff, Menu, Trash2 } from "lucide-react"
+import { MessageCircle, History, Sparkles, Mic, MicOff, Menu, Trash2, Phone } from "lucide-react"
 
 interface Message {
   id: string
@@ -45,6 +47,10 @@ export default function Page() {
     undefined
   const [selectedConversationId, setSelectedConversationId] = useState<Id<"conversations"> | null>(null)
   const [isVoiceActive, setIsVoiceActive] = useState(false)
+  const [isChatThinking, setIsChatThinking] = useState(false)
+  // The conversation that owns the live call — transcripts get appended
+  // here even if the user clicks away to browse another conversation.
+  const activeCallConversationRef = useRef<Id<"conversations"> | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [sidebarWidth, setSidebarWidth] = useState(370)
   const [isResizing, setIsResizing] = useState(false)
@@ -111,29 +117,40 @@ export default function Page() {
 
   // Vapi integration for Homie chatbot
   const vapiConfig = {
-    apiKey: process.env.NEXT_PUBLIC_VAPI_API_KEY || "",
+    apiKey: process.env.NEXT_PUBLIC_VAPI_PUBLIC_KEY || "",
     assistantId: process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID
   }
 
   const {
     isCallActive,
     error: vapiError,
+    volume,
+    liveTranscript,
+    activeToolCalls,
     startCall,
     stopCall,
     sendTextMessage,
   } = useVapiIntegration({
     config: vapiConfig,
-    onTranscript: (transcript) => {
-      // Handle voice transcripts from Homie
-      handleHomieResponse(transcript)
+    onTranscript: (transcript, role) => {
+      const convId = activeCallConversationRef.current
+      if (!convId) return
+      createMessage({
+        conversationId: convId,
+        role,
+        content: transcript,
+      }).catch((err) =>
+        console.error("Failed to save voice transcript:", err),
+      )
     },
     onCallStart: () => {
       console.log("Homie voice call started")
     },
     onCallEnd: () => {
       console.log("Homie voice call ended")
+      activeCallConversationRef.current = null
+      setIsVoiceActive(false)
     },
-    isActive: isVoiceActive,
   })
 
   const handleSendMessage = async (content: string) => {
@@ -171,7 +188,7 @@ export default function Page() {
     if (isVoiceActive) {
       sendTextMessage(content)
     } else {
-      // Generate AI response using Vercel AI SDK
+      setIsChatThinking(true)
       try {
         await generateAIResponse({
           conversationId: conversationId,
@@ -179,6 +196,8 @@ export default function Page() {
         })
       } catch (error) {
         console.error("Failed to generate AI response:", error)
+      } finally {
+        setIsChatThinking(false)
       }
     }
   }
@@ -197,13 +216,32 @@ export default function Page() {
     }
   }
 
-  const handleVoiceToggle = () => {
-    setIsVoiceActive(!isVoiceActive)
-    if (!isVoiceActive) {
-      startCall(undefined, convexUserId ? { userId: convexUserId } : undefined)
-    } else {
-      stopCall()
+  const startNewVoiceCall = async () => {
+    if (!convexUserId) return
+    try {
+      const convId = await createConversation({
+        userId: convexUserId,
+        type: "audio",
+        title: `Voice call ${new Date().toLocaleString([], {
+          month: "short",
+          day: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`,
+      })
+      activeCallConversationRef.current = convId
+      setSelectedConversationId(convId)
+      setIsVoiceActive(true)
+      await startCall(undefined, { userId: convexUserId })
+    } catch (err) {
+      console.error("Failed to start voice conversation:", err)
+      setIsVoiceActive(false)
     }
+  }
+
+  const endCurrentCall = async () => {
+    setIsVoiceActive(false)
+    await stopCall()
   }
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -287,14 +325,31 @@ export default function Page() {
           className={`flex flex-col border-r bg-background transition-all duration-200 ease-out ${sidebarOpen ? 'min-w-0' : 'w-0 overflow-hidden border-0'}`}
           style={{ width: sidebarOpen ? `${sidebarWidth}px` : '0px' }}
         >
-          <div className="flex items-center justify-between px-4 py-3 border-b shrink-0 h-[65px]">
-            <h2 className="text-lg font-semibold flex items-center gap-2">
-              <History className="h-5 w-5" />
-              Conversations
+          <div className="flex items-center justify-between px-4 py-3 border-b shrink-0 h-[65px] gap-2">
+            <h2 className="text-lg font-semibold flex items-center gap-2 min-w-0">
+              <History className="h-5 w-5 shrink-0" />
+              <span className="truncate">Conversations</span>
             </h2>
-            <Button onClick={startNewConversation} size="sm" variant="outline">
-              New Chat
-            </Button>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button
+                onClick={startNewConversation}
+                size="sm"
+                variant="outline"
+                className="gap-1"
+              >
+                <MessageCircle className="h-4 w-4" />
+                New Chat
+              </Button>
+              <Button
+                onClick={startNewVoiceCall}
+                size="sm"
+                className="gap-1"
+                disabled={!convexUserId || isCallActive}
+              >
+                <Phone className="h-4 w-4" />
+                New Call
+              </Button>
+            </div>
           </div>
 
           <ScrollArea className="flex-1">
@@ -314,6 +369,9 @@ export default function Page() {
               ) : conversations.length > 0 ? (
                 conversations.map((conversation: any, index: number) => {
                   const lastMessage = conversation.lastMessage
+                  const isAudio = conversation.type === "audio"
+                  const TypeIcon = isAudio ? Phone : MessageCircle
+                  const placeholder = isAudio ? "Voice call" : "No messages yet"
 
                   return (
                     <div
@@ -325,12 +383,19 @@ export default function Page() {
                       onClick={() => loadConversation(conversation._id)}
                     >
                       <div className="flex items-start gap-3">
+                        <div
+                          className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
+                            isAudio ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                          }`}
+                        >
+                          <TypeIcon className="h-4 w-4" />
+                        </div>
                         <div className="flex-1 min-w-0">
                           <h3 className="font-medium truncate" title={conversation.title || "Untitled"}>
                             {conversation.title || "Untitled"}
                           </h3>
-                          <p className="text-sm text-muted-foreground truncate" title={lastMessage?.content || "No messages yet"}>
-                            {lastMessage?.content || "No messages yet"}
+                          <p className="text-sm text-muted-foreground truncate" title={lastMessage?.content || placeholder}>
+                            {lastMessage?.content || placeholder}
                           </p>
                         </div>
                         <div className="flex flex-col items-end gap-1 shrink-0">
@@ -374,12 +439,11 @@ export default function Page() {
 
         {/* Main Chat Area */}
         <div className="flex-1 flex flex-col min-w-0">
-          <ChatMain
-            chat={homieChat}
-            messages={messages}
-            onSendMessage={handleSendMessage}
-            onVoiceToggle={handleVoiceToggle}
-            sidebarToggle={
+          {(() => {
+            const selectedConversation = conversations?.find(
+              (c: any) => c._id === selectedConversationId,
+            )
+            const sidebarToggleBtn = (
               <Button
                 variant="ghost"
                 size="icon"
@@ -387,8 +451,43 @@ export default function Page() {
               >
                 <Menu className="h-4 w-4" />
               </Button>
+            )
+
+            if (isCallActive) {
+              return (
+                <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
+                  <VoiceOverlay
+                    volume={volume}
+                    liveTranscript={liveTranscript}
+                    activeToolCalls={activeToolCalls}
+                    onEndCall={endCurrentCall}
+                    error={vapiError}
+                  />
+                </div>
+              )
             }
-          />
+
+            if (selectedConversation?.type === "audio") {
+              return (
+                <VoiceConversation
+                  title={selectedConversation.title || "Voice call"}
+                  messages={messages}
+                  onStartNewCall={startNewVoiceCall}
+                  sidebarToggle={sidebarToggleBtn}
+                />
+              )
+            }
+
+            return (
+              <ChatMain
+                chat={homieChat}
+                messages={messages}
+                onSendMessage={handleSendMessage}
+                isThinking={isChatThinking}
+                sidebarToggle={sidebarToggleBtn}
+              />
+            )
+          })()}
 
           {/* Homie Status Bar */}
           <div className="border-t bg-muted/30 p-3 sm:p-4 shrink-0">

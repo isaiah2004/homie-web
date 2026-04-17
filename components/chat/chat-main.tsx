@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
-import { Send, Phone, PhoneOff, Mic, MicOff, MoreVertical, Search, UserPlus } from "lucide-react"
+import { Send, Mic, MicOff, MoreVertical, Search, UserPlus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -33,7 +33,6 @@ interface Chat {
   timestamp: string
   unread: number
   isOnline: boolean
-  isVoiceActive: boolean
   type: "direct" | "group"
   avatar?: string
 }
@@ -42,7 +41,7 @@ interface ChatMainProps {
   chat: Chat | null
   messages: Message[]
   onSendMessage: (content: string) => void
-  onVoiceToggle: () => void
+  isThinking?: boolean
   onBackToList?: () => void
   sidebarToggle?: React.ReactNode
 }
@@ -51,7 +50,7 @@ export function ChatMain({
   chat,
   messages,
   onSendMessage,
-  onVoiceToggle,
+  isThinking,
   onBackToList,
   sidebarToggle,
 }: ChatMainProps) {
@@ -67,7 +66,7 @@ export function ChatMain({
         scrollElement.scrollTop = scrollElement.scrollHeight
       }
     }
-  }, [messages])
+  }, [messages, isThinking])
 
   const handleSendMessage = () => {
     if (messageInput.trim()) {
@@ -123,31 +122,11 @@ export function ChatMain({
             <h3 className="font-medium">{chat.name}</h3>
             <p className="text-sm text-muted-foreground">
               {chat.isOnline ? "Online" : "Offline"}
-              {chat.isVoiceActive && " • In voice call"}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant={chat.isVoiceActive ? "destructive" : "default"}
-            size="sm"
-            onClick={onVoiceToggle}
-            className="gap-2"
-          >
-            {chat.isVoiceActive ? (
-              <>
-                <PhoneOff className="h-4 w-4" />
-                End Call
-              </>
-            ) : (
-              <>
-                <Phone className="h-4 w-4" />
-                Voice Call
-              </>
-            )}
-          </Button>
-
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="sm">
@@ -177,7 +156,7 @@ export function ChatMain({
         <div className="space-y-4">
           {messages.map((message) => (
             <div
-              key={message.id}
+              key={`msg-${message.id}`}
               className={`flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
             >
               <div
@@ -204,6 +183,16 @@ export function ChatMain({
               </div>
             </div>
           ))}
+          {isThinking && (
+            <div className="flex justify-start">
+              <div className="bg-muted rounded-lg p-3 flex items-center gap-1.5">
+                <span className="sr-only">Homie is thinking</span>
+                <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:-0.3s]" />
+                <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce [animation-delay:-0.15s]" />
+                <span className="h-2 w-2 rounded-full bg-muted-foreground/60 animate-bounce" />
+              </div>
+            </div>
+          )}
         </div>
       </ScrollArea>
 

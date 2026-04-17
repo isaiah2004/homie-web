@@ -10,10 +10,14 @@ interface VapiConfig {
 
 interface VapiIntegrationProps {
   config: VapiConfig
-  onTranscript: (transcript: string) => void
+  onTranscript: (transcript: string, role: "user" | "assistant") => void
   onCallStart: () => void
   onCallEnd: () => void
-  isActive: boolean
+}
+
+interface LiveTranscript {
+  user: string
+  assistant: string
 }
 
 export function useVapiIntegration({
@@ -21,88 +25,115 @@ export function useVapiIntegration({
   onTranscript,
   onCallStart,
   onCallEnd,
-  isActive,
 }: VapiIntegrationProps) {
   const [isInitialized, setIsInitialized] = useState(false)
   const [isCallActive, setIsCallActive] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [volume, setVolume] = useState(0)
+  const [liveTranscript, setLiveTranscript] = useState<LiveTranscript>({
+    user: "",
+    assistant: "",
+  })
+  const [activeToolCalls, setActiveToolCalls] = useState<string[]>([])
+
   const vapiRef = useRef<any>(null)
+  // Callbacks are pinned in refs so the init effect can stay mounted for
+  // the lifetime of the component instead of tearing down on every render.
+  const onCallStartRef = useRef(onCallStart)
+  const onCallEndRef = useRef(onCallEnd)
+  const onTranscriptRef = useRef(onTranscript)
+  useEffect(() => {
+    onCallStartRef.current = onCallStart
+    onCallEndRef.current = onCallEnd
+    onTranscriptRef.current = onTranscript
+  })
 
   useEffect(() => {
-    // Initialize Vapi
-    if (!isInitialized && config.apiKey) {
-      try {
-        vapiRef.current = new Vapi(config.apiKey)
-        
-        // Set up event listeners
-        vapiRef.current.on("call-start", () => {
-          console.log("Vapi call started")
-          setIsCallActive(true)
-          onCallStart()
-        })
+    if (!config.apiKey) return
+    let vapi: any
+    try {
+      vapi = new Vapi(config.apiKey)
+      vapiRef.current = vapi
 
-        vapiRef.current.on("call-end", () => {
-          console.log("Vapi call ended")
-          setIsCallActive(false)
-          onCallEnd()
-        })
+      vapi.on("call-start", () => {
+        setIsCallActive(true)
+        setLiveTranscript({ user: "", assistant: "" })
+        setActiveToolCalls([])
+        onCallStartRef.current?.()
+      })
 
-        vapiRef.current.on("speech", (speech: any) => {
-          if (speech.type === "transcript") {
-            onTranscript(speech.transcript)
-          }
-        })
+      vapi.on("call-end", () => {
+        setIsCallActive(false)
+        setVolume(0)
+        setActiveToolCalls([])
+        onCallEndRef.current?.()
+      })
 
-        vapiRef.current.on("error", (error: any) => {
-          console.error("Vapi error:", error)
-          setError(error.message || "An error occurred")
-        })
+      vapi.on("volume-level", (vol: number) => {
+        setVolume(vol)
+      })
 
-        setIsInitialized(true)
-      } catch (err) {
-        console.error("Failed to initialize Vapi:", err)
-        setError("Failed to initialize voice services")
-      }
+      vapi.on("message", (msg: any) => {
+        if (msg?.type === "transcript") {
+          const role: "user" | "assistant" = msg.role
+          if (role !== "user" && role !== "assistant") return
+          const text: string = msg.transcript ?? ""
+          const isFinal = msg.transcriptType === "final"
+          setLiveTranscript((prev) => ({ ...prev, [role]: text }))
+          if (isFinal) onTranscriptRef.current?.(text, role)
+          return
+        }
+        if (msg?.type === "tool-calls") {
+          const names: string[] =
+            msg.toolCallList?.map((t: any) => t?.name ?? t?.function?.name).filter(Boolean) ??
+            msg.toolWithToolCallList?.map((t: any) => t?.function?.name ?? t?.name).filter(Boolean) ??
+            []
+          if (names.length) setActiveToolCalls((prev) => [...prev, ...names])
+          return
+        }
+        if (msg?.type === "tool-calls-result" || msg?.type === "tool-call-result") {
+          setActiveToolCalls([])
+          return
+        }
+      })
+
+      vapi.on("error", (err: any) => {
+        console.error("Vapi error:", err)
+        setError(err?.message || "An error occurred")
+      })
+
+      setIsInitialized(true)
+    } catch (err) {
+      console.error("Failed to initialize Vapi:", err)
+      setError("Failed to initialize voice services")
     }
 
     return () => {
-      if (vapiRef.current && isCallActive) {
-        vapiRef.current.stop()
-      }
+      try {
+        vapi?.stop?.()
+      } catch {}
+      vapiRef.current = null
+      setIsInitialized(false)
     }
-  }, [config.apiKey, isInitialized, onCallStart, onCallEnd, onTranscript])
+  }, [config.apiKey])
 
-  const startCall = async (assistantId?: string, metadata?: Record<string, string>) => {
+  const startCall = async (
+    assistantId?: string,
+    metadata?: Record<string, string>,
+  ) => {
     if (!vapiRef.current) {
       setError("Voice service not initialized")
       return
     }
-
     try {
       setError(null)
       const assistant = assistantId || config.assistantId
-
       if (!assistant) {
-        const assistantConfig = {
-          name: "Homie Assistant",
-          model: {
-            provider: "openai",
-            model: "gpt-3.5-turbo",
-            temperature: 0.7,
-          },
-          voice: {
-            provider: "elevenlabs",
-            voiceId: "rachel",
-          },
-          firstMessage: "Hello! I'm your voice assistant. How can I help you today?",
-        }
-
-        await vapiRef.current.start(assistantConfig)
-      } else {
-        // Pass metadata (e.g. userId) so the webhook can identify the caller
-        const overrides = metadata ? { metadata } : undefined
-        await vapiRef.current.start(assistant, overrides)
+        setError("No assistant configured")
+        return
       }
+      const overrides = metadata ? { metadata } : undefined
+      await vapiRef.current.start(assistant, overrides)
     } catch (err) {
       console.error("Failed to start Vapi call:", err)
       setError("Failed to start voice call")
@@ -131,72 +162,15 @@ export function useVapiIntegration({
     }
   }
 
-  // Auto-start/stop based on isActive prop
-  useEffect(() => {
-    if (isActive && !isCallActive && isInitialized) {
-      startCall()
-    } else if (!isActive && isCallActive) {
-      stopCall()
-    }
-  }, [isActive, isCallActive, isInitialized])
-
   return {
     isInitialized,
     isCallActive,
     error,
+    volume,
+    liveTranscript,
+    activeToolCalls,
     startCall,
     stopCall,
     sendTextMessage,
   }
-}
-
-// Component for voice controls
-export function VoiceControls({
-  isActive,
-  onToggle,
-  isCallActive,
-  error,
-}: {
-  isActive: boolean
-  onToggle: () => void
-  isCallActive: boolean
-  error: string | null
-}) {
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <button
-        onClick={onToggle}
-        className={`
-          relative p-4 rounded-full transition-all duration-200
-          ${isActive 
-            ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse' 
-            : 'bg-green-500 hover:bg-green-600 text-white'
-          }
-        `}
-      >
-        <div className="h-6 w-6" />
-        <div className="absolute inset-0 flex items-center justify-center">
-          {isActive ? (
-            <div className="h-8 w-8 rounded-full bg-white/30 animate-ping" />
-          ) : null}
-        </div>
-      </button>
-      
-      <div className="text-center">
-        <p className="text-sm font-medium">
-          {isActive ? "Voice Active" : "Voice Inactive"}
-        </p>
-        {isCallActive && (
-          <p className="text-xs text-green-600 animate-pulse">
-            Connected to voice assistant
-          </p>
-        )}
-        {error && (
-          <p className="text-xs text-red-500 mt-1">
-            {error}
-          </p>
-        )}
-      </div>
-    </div>
-  )
 }
