@@ -72,7 +72,7 @@ export function useVapiIntegration({
     }
   }, [config.apiKey, isInitialized, onCallStart, onCallEnd, onTranscript])
 
-  const startCall = async (assistantId?: string) => {
+  const startCall = async (assistantId?: string, metadata?: Record<string, string>) => {
     if (!vapiRef.current) {
       setError("Voice service not initialized")
       return
@@ -81,9 +81,8 @@ export function useVapiIntegration({
     try {
       setError(null)
       const assistant = assistantId || config.assistantId
-      
+
       if (!assistant) {
-        // Create a default assistant if none provided
         const assistantConfig = {
           name: "Homie Assistant",
           model: {
@@ -97,10 +96,12 @@ export function useVapiIntegration({
           },
           firstMessage: "Hello! I'm your voice assistant. How can I help you today?",
         }
-        
+
         await vapiRef.current.start(assistantConfig)
       } else {
-        await vapiRef.current.start(assistant)
+        // Pass metadata (e.g. userId) so the webhook can identify the caller
+        const overrides = metadata ? { metadata } : undefined
+        await vapiRef.current.start(assistant, overrides)
       }
     } catch (err) {
       console.error("Failed to start Vapi call:", err)
