@@ -104,6 +104,7 @@ export const users = defineTable({
       v.literal("other")
     ),
     mapsLink: v.optional(v.string()),
+    address: v.optional(v.string()),
     tags: v.array(v.string()),
     visibility: visibilityEnum,
   }))),
