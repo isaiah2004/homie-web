@@ -27,6 +27,7 @@ type ProfileItemPayload = {
   name?: string;
   placeType?: string;
   mapsLink?: string;
+  address?: string;
   tags?: string[];
   // media
   title?: string;
@@ -58,8 +59,9 @@ function buildItemsForUser(user: Doc<"users">): Array<{
 
   for (const place of user.places ?? []) {
     const tagPart = place.tags.length ? `. ${place.tags.join(", ")}` : "";
+    const addrPart = place.address ? `. ${place.address}` : "";
     out.push({
-      text: `${place.name}. ${place.type}${tagPart}. recommended by ${ownerName}${ownerLocation ? " in " + ownerLocation : ""}`,
+      text: `${place.name}. ${place.type}${addrPart}${tagPart}. recommended by ${ownerName}${ownerLocation ? " in " + ownerLocation : ""}`,
       payload: {
         ...ownerBase,
         entityType: "place",
@@ -67,6 +69,7 @@ function buildItemsForUser(user: Doc<"users">): Array<{
         name: place.name,
         placeType: place.type,
         mapsLink: place.mapsLink,
+        address: place.address,
         tags: place.tags,
       },
     });
@@ -167,6 +170,7 @@ export type SearchHit = {
   name?: string;
   placeType?: string;
   mapsLink?: string;
+  address?: string;
   tags?: string[];
   title?: string;
   mediaType?: string;
@@ -250,6 +254,7 @@ export const searchProfileItems = internalAction({
         name: p.name,
         placeType: p.placeType,
         mapsLink: p.mapsLink,
+        address: p.address,
         tags: p.tags,
         title: p.title,
         mediaType: p.mediaType,
