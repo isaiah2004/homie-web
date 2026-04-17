@@ -8,10 +8,13 @@ import * as z from "zod"
 import {
   BriefcaseIcon,
   GraduationCapIcon,
+  InfoIcon,
+  LinkIcon,
+  Loader2Icon,
   PlusIcon,
   XIcon,
 } from "lucide-react"
-import { useMutation, useQuery } from "convex/react"
+import { useAction, useMutation, useQuery } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import { Id } from "@/convex/_generated/dataModel"
 import { useUser } from "@clerk/nextjs"
@@ -46,6 +49,15 @@ import {
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -75,6 +87,7 @@ const placeSchema = z.object({
     .url("Must be a valid URL.")
     .optional()
     .or(z.literal("")),
+  address: z.string().optional().or(z.literal("")),
   tags: z.array(z.string()),
   visibility: visibilityEnum,
 })
@@ -263,6 +276,120 @@ function TagInput({
         </div>
       )}
     </div>
+  )
+}
+
+function AddFromGoogleMapsDialog({
+  onPlaceResolved,
+}: {
+  onPlaceResolved: (place: {
+    name: string
+    type: "restaurant" | "cafe" | "bar" | "park" | "gym" | "library" | "store" | "hangout" | "other"
+    mapsLink: string
+    address: string
+    tags: string[]
+    visibility: "close" | "friends" | "mutual" | "none"
+  }) => void
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [url, setUrl] = React.useState("")
+  const [isParsing, setIsParsing] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const parseLink = useAction(api.parseGoogleMapsLink.parseGoogleMapsLink)
+
+  async function handleParse() {
+    if (!url.trim()) return
+    setError(null)
+    setIsParsing(true)
+    try {
+      const result = await parseLink({ url: url.trim() })
+      onPlaceResolved({
+        name: result.name,
+        type: result.type,
+        mapsLink: result.mapsLink,
+        address: result.address ?? "",
+        tags: [],
+        visibility: "friends",
+      })
+      setUrl("")
+      setOpen(false)
+      toast.success(`Added "${result.name}"!`)
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to parse Google Maps link",
+      )
+    } finally {
+      setIsParsing(false)
+    }
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v)
+        if (!v) {
+          setError(null)
+          setUrl("")
+        }
+      }}
+    >
+      <DialogTrigger asChild>
+        <Button type="button" variant="outline" size="sm" className="w-fit">
+          <LinkIcon className="mr-1 size-4" />
+          Add from Google Maps
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Add Place from Google Maps</DialogTitle>
+          <DialogDescription>
+            Paste a Google Maps link and we&apos;ll auto-fill the place details
+            for you.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3">
+          <Input
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault()
+                handleParse()
+              }
+            }}
+            placeholder="https://maps.app.goo.gl/..."
+            className="bg-background border-border"
+            disabled={isParsing}
+          />
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <div className="flex items-start gap-2 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+            <InfoIcon className="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              Open Google Maps, find the place, tap{" "}
+              <strong>Share</strong> and copy the link. It usually looks like{" "}
+              <code className="text-[11px]">maps.app.goo.gl/...</code>
+            </span>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            onClick={handleParse}
+            disabled={isParsing || !url.trim()}
+          >
+            {isParsing ? (
+              <>
+                <Loader2Icon className="mr-2 size-4 animate-spin" />
+                Fetching details...
+              </>
+            ) : (
+              "Add Place"
+            )}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -1110,6 +1237,22 @@ export function UserInfoForm() {
                           />
 
                           <Controller
+                            name={`places.${index}.address`}
+                            control={form.control}
+                            render={({ field }) => (
+                              <Field>
+                                <FieldLabel>Address</FieldLabel>
+                                <Input
+                                  {...field}
+                                  value={field.value ?? ""}
+                                  placeholder="Street address (optional)"
+                                  className="bg-background border-border"
+                                />
+                              </Field>
+                            )}
+                          />
+
+                          <Controller
                             name={`places.${index}.tags`}
                             control={form.control}
                             render={({ field }) => (
@@ -1126,24 +1269,30 @@ export function UserInfoForm() {
                       </TexturedCard>
                     ))}
                   </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      places.append({
-                        name: "",
-                        type: "restaurant",
-                        mapsLink: "",
-                        tags: [],
-                        visibility: "friends",
-                      })
-                    }
-                    className="w-fit"
-                  >
-                    <PlusIcon className="mr-1 size-4" />
-                    Add Place
-                  </Button>
+                  <div className="flex gap-2 flex-wrap">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        places.append({
+                          name: "",
+                          type: "restaurant",
+                          mapsLink: "",
+                          address: "",
+                          tags: [],
+                          visibility: "friends",
+                        })
+                      }
+                      className="w-fit"
+                    >
+                      <PlusIcon className="mr-1 size-4" />
+                      Add Manually
+                    </Button>
+                    <AddFromGoogleMapsDialog
+                      onPlaceResolved={(place) => places.append(place)}
+                    />
+                  </div>
                 </div>
               </AccordionContent>
             </AccordionItem>

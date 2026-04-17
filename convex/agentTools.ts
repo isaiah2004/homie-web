@@ -117,6 +117,7 @@ export function buildAgentTools(ctx: ActionCtx, askerId: Id<"users">) {
           placeType: h.placeType,
           tags: h.tags,
           mapsLink: h.mapsLink,
+          address: h.address,
           recommendedBy: h.ownerName,
           ownerLocation: h.ownerLocation,
           score: h.score,
