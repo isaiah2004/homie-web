@@ -1197,7 +1197,7 @@ export function UserInfoForm() {
                               media.append({
                                 title: "",
                                 type:
-                                  tab.id === "all" || tab.id === "other"
+                                  tab.id === "all"
                                     ? "music"
                                     : tab.id === "book"
                                       ? "book"

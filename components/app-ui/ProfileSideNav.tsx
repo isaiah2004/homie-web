@@ -101,6 +101,7 @@ export function ProfileSideNav() {
             size="icon"
             variant="secondary"
             className="rounded-full shadow-md"
+            aria-label="Open profile section navigation"
           >
             <Menu className="size-5" />
           </Button>
