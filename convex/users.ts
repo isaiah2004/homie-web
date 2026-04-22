@@ -318,6 +318,16 @@ export const getUserById = internalQuery({
   },
 });
 
+// Used by `resolveIdentity` when running inside an action ctx — actions
+// don't expose `ctx.db`, so we pay a single runQuery hop to fetch the
+// dev-selected user's row.
+export const getUserInternal = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    return await ctx.db.get(userId);
+  },
+});
+
 // Get or create user by email (for Clerk auth integration).
 //
 // Clerk's username is mirrored into our row every call so the Convex copy

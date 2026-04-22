@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { useQuery, useMutation, useAction } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import { Id } from "@/convex/_generated/dataModel"
-import { useUser } from "@clerk/nextjs"
+import { useActiveUser } from "@/hooks/use-active-user"
 import { SiteHeader } from "@/components/site-header"
 import { ChatMain } from "@/components/chat/chat-main"
 import { useVapiIntegration } from "@/components/chat/vapi-integration"
@@ -37,14 +37,10 @@ interface Conversation {
 }
 
 export default function Page() {
-  const { user: clerkUser } = useUser()
-  const clerkEmail = clerkUser?.primaryEmailAddress?.emailAddress
-  const clerkUsername = clerkUser?.username ?? undefined
-  const clerkName =
-    clerkUser?.fullName ||
-    [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(" ") ||
-    clerkUser?.username ||
-    undefined
+  const activeUser = useActiveUser()
+  const clerkEmail = activeUser.email ?? undefined
+  const clerkUsername = activeUser.username ?? undefined
+  const clerkName = activeUser.fullName ?? undefined
   const [selectedConversationId, setSelectedConversationId] = useState<Id<"conversations"> | null>(null)
   const [isVoiceActive, setIsVoiceActive] = useState(false)
   const [isChatThinking, setIsChatThinking] = useState(false)
@@ -61,6 +57,12 @@ export default function Page() {
   const getOrCreateUser = useMutation(api.users.getOrCreateUser)
 
   useEffect(() => {
+    // Dev mode skips the Clerk → Convex mapping entirely; the dev switcher
+    // already gives us the Convex users id.
+    if (activeUser.isDevMode) {
+      setConvexUserId(activeUser.devUserId)
+      return
+    }
     if (clerkEmail) {
       getOrCreateUser({
         email: clerkEmail,
@@ -70,7 +72,14 @@ export default function Page() {
         .then((id) => setConvexUserId(id as Id<"users">))
         .catch(console.error)
     }
-  }, [clerkEmail, clerkUsername, clerkName, getOrCreateUser])
+  }, [
+    activeUser.isDevMode,
+    activeUser.devUserId,
+    clerkEmail,
+    clerkUsername,
+    clerkName,
+    getOrCreateUser,
+  ])
 
   // Fetch conversations from Convex (includes last message preview)
   const conversations = useQuery(api.conversations.getConversationsWithLastMessage,

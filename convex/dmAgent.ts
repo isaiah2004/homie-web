@@ -3,9 +3,11 @@
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { createOpenAI } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText } from "ai";
 import type { Doc } from "./_generated/dataModel";
+
+const CHAT_MODEL = "gemini-3.1-flash-lite";
 
 export const generateAgentResponse = internalAction({
   args: {
@@ -14,12 +16,13 @@ export const generateAgentResponse = internalAction({
     query: v.string(),
   },
   handler: async (ctx, { responseId, askerId, query }): Promise<void> => {
-    const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) {
+    const googleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    if (!googleKey) {
       await ctx.runMutation(internal.dm.finalizeAgentResponse, {
         responseId,
         status: "failed",
-        error: "OPENAI_API_KEY not configured on the Convex deployment",
+        error:
+          "GOOGLE_GENERATIVE_AI_API_KEY not configured on the Convex deployment",
       });
       return;
     }
@@ -61,9 +64,9 @@ export const generateAgentResponse = internalAction({
         .filter(Boolean)
         .join("\n\n");
 
-      const openai = createOpenAI({ apiKey });
+      const google = createGoogleGenerativeAI({ apiKey: googleKey });
       const { text } = await generateText({
-        model: openai("gpt-4o-mini"),
+        model: google(CHAT_MODEL),
         system,
         prompt: query,
         temperature: 0.7,

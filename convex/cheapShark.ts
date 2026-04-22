@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { resolveIdentity } from "./lib/identity";
 
 const CHEAPSHARK_API_BASE = "https://www.cheapshark.com/api/1.0/games";
 const SEARCH_TIMEOUT_MS = 8_000;
@@ -50,12 +51,10 @@ export const searchCheapShark = action({
   args: {
     query: v.string(),
     limit: v.optional(v.number()),
+    devUserId: v.optional(v.id("users")),
   },
-  handler: async (ctx, { query, limit }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (identity === null) {
-      throw new Error("Not authenticated");
-    }
+  handler: async (ctx, { query, limit, devUserId }) => {
+    await resolveIdentity(ctx, { devUserId });
 
     const q = query.trim().slice(0, MAX_QUERY_LENGTH);
     if (!q) return [] as NormalizedCheapSharkResult[];

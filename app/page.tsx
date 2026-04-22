@@ -8,6 +8,49 @@ import { Reveal, RevealWords } from "./ppt/_components/Reveal"
 import { BondNetwork } from "./_components/BondNetwork"
 
 const HERO_PALETTE: [string, string, string] = ["#7c3aed", "#ec4899", "#f59e0b"]
+const isDevMode = process.env.NEXT_PUBLIC_DEV_MODE === "true"
+
+// In dev mode there is no ClerkProvider (see <AuthProviders>), so we must
+// avoid Clerk hooks/components on this page. Render a stand-in nav + CTAs
+// that link straight into the dashboard instead.
+function DevNavAuth() {
+  return (
+    <Link
+      href="/dashboard"
+      className="cursor-pointer rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-white/90"
+    >
+      open dashboard
+    </Link>
+  )
+}
+
+function DevHeroCta() {
+  return (
+    <Link
+      href="/dashboard"
+      className="group cursor-pointer rounded-full bg-white px-6 py-3 text-sm font-medium text-black transition hover:bg-white/90"
+    >
+      open your dashboard
+      <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
+        →
+      </span>
+    </Link>
+  )
+}
+
+function DevBottomCta() {
+  return (
+    <Link
+      href="/dashboard"
+      className="group cursor-pointer rounded-full bg-white px-7 py-3.5 text-base font-medium text-black transition hover:bg-white/90"
+    >
+      continue to dashboard
+      <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
+        →
+      </span>
+    </Link>
+  )
+}
 
 export default function LandingPage() {
   return (
@@ -28,21 +71,27 @@ export default function LandingPage() {
           >
             the pitch
           </Link>
-          <Show when="signed-out">
-            <SignInButton>
-              <button className="cursor-pointer rounded-full px-3 py-2 text-sm text-white/75 transition hover:text-white">
-                sign in
-              </button>
-            </SignInButton>
-            <SignUpButton>
-              <button className="cursor-pointer rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-white/90">
-                sign up
-              </button>
-            </SignUpButton>
-          </Show>
-          <Show when="signed-in">
-            <UserButton />
-          </Show>
+          {isDevMode ? (
+            <DevNavAuth />
+          ) : (
+            <>
+              <Show when="signed-out">
+                <SignInButton>
+                  <button className="cursor-pointer rounded-full px-3 py-2 text-sm text-white/75 transition hover:text-white">
+                    sign in
+                  </button>
+                </SignInButton>
+                <SignUpButton>
+                  <button className="cursor-pointer rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-white/90">
+                    sign up
+                  </button>
+                </SignUpButton>
+              </Show>
+              <Show when="signed-in">
+                <UserButton />
+              </Show>
+            </>
+          )}
         </div>
       </nav>
 
@@ -86,27 +135,33 @@ export default function LandingPage() {
             films, books and games you actually love.
           </Reveal>
           <Reveal delay={2.0} className="mt-4 flex flex-wrap items-center justify-center gap-3">
-            <Show when="signed-out">
-              <SignUpButton>
-                <button className="group cursor-pointer rounded-full bg-white px-6 py-3 text-sm font-medium text-black transition hover:bg-white/90">
-                  get your homie
-                  <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
-                    →
-                  </span>
-                </button>
-              </SignUpButton>
-            </Show>
-            <Show when="signed-in">
-              <Link
-                href="/dashboard"
-                className="group cursor-pointer rounded-full bg-white px-6 py-3 text-sm font-medium text-black transition hover:bg-white/90"
-              >
-                open your dashboard
-                <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
-                  →
-                </span>
-              </Link>
-            </Show>
+            {isDevMode ? (
+              <DevHeroCta />
+            ) : (
+              <>
+                <Show when="signed-out">
+                  <SignUpButton>
+                    <button className="group cursor-pointer rounded-full bg-white px-6 py-3 text-sm font-medium text-black transition hover:bg-white/90">
+                      get your homie
+                      <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
+                        →
+                      </span>
+                    </button>
+                  </SignUpButton>
+                </Show>
+                <Show when="signed-in">
+                  <Link
+                    href="/dashboard"
+                    className="group cursor-pointer rounded-full bg-white px-6 py-3 text-sm font-medium text-black transition hover:bg-white/90"
+                  >
+                    open your dashboard
+                    <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
+                      →
+                    </span>
+                  </Link>
+                </Show>
+              </>
+            )}
             <Link
               href="/ppt"
               className="cursor-pointer rounded-full border border-white/15 bg-white/5 px-6 py-3 text-sm text-white/80 backdrop-blur transition hover:border-white/30 hover:bg-white/10"
@@ -210,27 +265,33 @@ export default function LandingPage() {
           />
         </h2>
         <Reveal delay={1.2} className="mt-10 flex flex-wrap items-center justify-center gap-3">
-          <Show when="signed-out">
-            <SignUpButton>
-              <button className="group cursor-pointer rounded-full bg-white px-7 py-3.5 text-base font-medium text-black transition hover:bg-white/90">
-                start your homie
-                <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
-                  →
-                </span>
-              </button>
-            </SignUpButton>
-          </Show>
-          <Show when="signed-in">
-            <Link
-              href="/dashboard"
-              className="group cursor-pointer rounded-full bg-white px-7 py-3.5 text-base font-medium text-black transition hover:bg-white/90"
-            >
-              continue to dashboard
-              <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
-                →
-              </span>
-            </Link>
-          </Show>
+          {isDevMode ? (
+            <DevBottomCta />
+          ) : (
+            <>
+              <Show when="signed-out">
+                <SignUpButton>
+                  <button className="group cursor-pointer rounded-full bg-white px-7 py-3.5 text-base font-medium text-black transition hover:bg-white/90">
+                    start your homie
+                    <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
+                      →
+                    </span>
+                  </button>
+                </SignUpButton>
+              </Show>
+              <Show when="signed-in">
+                <Link
+                  href="/dashboard"
+                  className="group cursor-pointer rounded-full bg-white px-7 py-3.5 text-base font-medium text-black transition hover:bg-white/90"
+                >
+                  continue to dashboard
+                  <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
+                    →
+                  </span>
+                </Link>
+              </Show>
+            </>
+          )}
         </Reveal>
       </section>
 

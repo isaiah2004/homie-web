@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { resolveIdentity } from "./lib/identity";
 
 const OPEN_LIBRARY_SEARCH_URL = "https://openlibrary.org/search.json";
 const SEARCH_TIMEOUT_MS = 8_000;
@@ -65,12 +66,10 @@ export const searchOpenLibrary = action({
   args: {
     query: v.string(),
     limit: v.optional(v.number()),
+    devUserId: v.optional(v.id("users")),
   },
-  handler: async (ctx, { query, limit }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (identity === null) {
-      throw new Error("Not authenticated");
-    }
+  handler: async (ctx, { query, limit, devUserId }) => {
+    await resolveIdentity(ctx, { devUserId });
 
     const q = query.trim().slice(0, MAX_QUERY_LENGTH);
     if (!q) return [] as NormalizedOpenLibraryResult[];

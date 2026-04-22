@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { resolveIdentity } from "./lib/identity";
 
 // TVMaze public search API — no key, no rate limit headers worth respecting
 // at our debounce cadence. Preferred over iTunes for TV series because
@@ -35,12 +36,10 @@ export const searchTvMaze = action({
   args: {
     query: v.string(),
     limit: v.optional(v.number()),
+    devUserId: v.optional(v.id("users")),
   },
-  handler: async (ctx, { query, limit }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (identity === null) {
-      throw new Error("Not authenticated");
-    }
+  handler: async (ctx, { query, limit, devUserId }) => {
+    await resolveIdentity(ctx, { devUserId });
 
     const q = query.trim().slice(0, MAX_QUERY_LENGTH);
     if (!q) return [] as NormalizedTvMazeResult[];

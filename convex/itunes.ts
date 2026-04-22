@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { action } from "./_generated/server";
+import { resolveIdentity } from "./lib/identity";
 
 // iTunes Search API: Apple disabled the `media=movie` and `media=tvShow`
 // filters (they now return resultCount=0). General search still surfaces
@@ -36,12 +37,10 @@ export const searchItunes = action({
   args: {
     query: v.string(),
     limit: v.optional(v.number()),
+    devUserId: v.optional(v.id("users")),
   },
-  handler: async (ctx, { query, limit }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (identity === null) {
-      throw new Error("Not authenticated");
-    }
+  handler: async (ctx, { query, limit, devUserId }) => {
+    await resolveIdentity(ctx, { devUserId });
 
     const q = query.trim().slice(0, MAX_QUERY_LENGTH);
     if (!q) return [] as NormalizedItunesResult[];

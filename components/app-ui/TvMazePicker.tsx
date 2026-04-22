@@ -1,8 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { useAction } from "convex/react"
 import { api } from "@/convex/_generated/api"
+import { useIdentifiedAction } from "@/hooks/use-identified"
 import { MediaSearchPicker } from "./MediaSearchPicker"
 import type { NormalizedTvMazeResult } from "@/convex/tvmaze"
 
@@ -21,7 +21,7 @@ export function TvMazePicker({
   onClear,
   placeholder = "Search TV shows…",
 }: Props) {
-  const search = useAction(api.tvmaze.searchTvMaze)
+  const search = useIdentifiedAction(api.tvmaze.searchTvMaze)
   const searchFn = React.useCallback(
     async (query: string) =>
       (await search({ query, limit: 6 })) as TvMazePick[],

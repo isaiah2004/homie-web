@@ -2,6 +2,7 @@
 
 import { action } from "./_generated/server";
 import { v } from "convex/values";
+import { resolveIdentity } from "./lib/identity";
 
 const PLACE_TYPES = [
   "restaurant",
@@ -29,7 +30,10 @@ function isGoogleMapsHost(hostname: string): boolean {
 }
 
 export const parseGoogleMapsLink = action({
-  args: { url: v.string() },
+  args: {
+    url: v.string(),
+    devUserId: v.optional(v.id("users")),
+  },
   returns: v.object({
     name: v.string(),
     address: v.optional(v.string()),
@@ -46,10 +50,9 @@ export const parseGoogleMapsLink = action({
     ),
     mapsLink: v.string(),
   }),
-  handler: async (ctx, { url }) => {
-    // Auth check
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Authentication required.");
+  handler: async (ctx, { url, devUserId }) => {
+    // Auth check (supports dev mode via devUserId)
+    await resolveIdentity(ctx, { devUserId });
 
     let resolvedUrl = url.trim();
 

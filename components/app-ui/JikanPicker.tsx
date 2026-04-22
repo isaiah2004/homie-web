@@ -1,8 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { useAction } from "convex/react"
 import { api } from "@/convex/_generated/api"
+import { useIdentifiedAction } from "@/hooks/use-identified"
 import { MediaSearchPicker } from "./MediaSearchPicker"
 
 export type JikanPick = {
@@ -27,7 +27,7 @@ export function JikanPicker({
   onClear,
   placeholder,
 }: Props) {
-  const search = useAction(api.jikan.searchJikan)
+  const search = useIdentifiedAction(api.jikan.searchJikan)
   const searchFn = React.useCallback(
     async (query: string) =>
       (await search({ query, limit: 6 })) as JikanPick[],
