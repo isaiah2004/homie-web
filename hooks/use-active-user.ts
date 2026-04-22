@@ -31,7 +31,13 @@ const isDevMode = process.env.NEXT_PUBLIC_DEV_MODE === "true"
 // violate the rules of hooks.
 
 function useActiveUserDev(): ActiveUser {
-  const [devUserId, setDevUserId] = useState<Id<"users"> | null>(null)
+  // undefined means "we haven't read localStorage yet" (first client render);
+  // null means "we read and no user is selected". The distinction lets
+  // consumers show a distinct "pick a dev user" empty state rather than a
+  // generic infinite loading shell.
+  const [devUserId, setDevUserId] = useState<Id<"users"> | null | undefined>(
+    undefined
+  )
 
   useEffect(() => {
     const read = () => {
@@ -51,12 +57,24 @@ function useActiveUserDev(): ActiveUser {
     devUserId ? { userId: devUserId } : "skip"
   )
 
+  // isLoaded is true when:
+  //   - we've read localStorage AND either (a) no user picked (null) — so
+  //     there's nothing to load or (b) we have a Convex row in hand.
+  // Consumers who see devUserId === null + isDevMode === true should render
+  // a "Pick a user from the DEV switcher" prompt rather than "Loading…".
+  const isLoaded =
+    devUserId === undefined
+      ? false
+      : devUserId === null
+        ? true
+        : devUser !== undefined
+
   return {
-    isLoaded: devUserId ? devUser !== undefined : true,
+    isLoaded,
     email: devUser?.email ?? null,
     username: devUser?.username ?? null,
     fullName: devUser?.name ?? null,
-    devUserId,
+    devUserId: devUserId ?? null,
     isDevMode: true,
   }
 }

@@ -436,6 +436,31 @@ export const seedDevDataPublic = mutation({
         .unique()
 
       if (existing) {
+        // Only reindex if embedding-relevant fields actually changed.
+        // Without this, clicking "Seed data" repeatedly stampedes 8 OpenAI
+        // embed calls + Qdrant upserts per click, burning credits and
+        // accumulating background action failures when keys are absent.
+        const embeddingInputBefore = JSON.stringify({
+          bio: existing.bio ?? "",
+          location: existing.location ?? "",
+          interests: existing.interests ?? [],
+          media: existing.media ?? [],
+          places: existing.places ?? [],
+          projects: existing.projects ?? [],
+          workplace: existing.workplace ?? null,
+          school: existing.school ?? null,
+        })
+        const embeddingInputAfter = JSON.stringify({
+          bio: seed.bio ?? "",
+          location: seed.location ?? "",
+          interests: seed.interests ?? [],
+          media: seed.media ?? [],
+          places: seed.places ?? [],
+          projects: seed.projects ?? [],
+          workplace: seed.workplace ?? null,
+          school: seed.school ?? null,
+        })
+
         await ctx.db.patch(existing._id, {
           name: seed.name,
           email: seed.email,
@@ -451,9 +476,11 @@ export const seedDevDataPublic = mutation({
           workplace: seed.workplace,
           school: seed.school,
         })
-        await ctx.scheduler.runAfter(0, internal.embeddings.reindexUser, {
-          userId: existing._id,
-        })
+        if (embeddingInputBefore !== embeddingInputAfter) {
+          await ctx.scheduler.runAfter(0, internal.embeddings.reindexUser, {
+            userId: existing._id,
+          })
+        }
         updated++
         results.push({
           _id: existing._id,

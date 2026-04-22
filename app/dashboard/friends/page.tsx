@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { api } from "@/convex/_generated/api"
 import { Doc, Id } from "@/convex/_generated/dataModel"
 import { useActiveUser } from "@/hooks/use-active-user"
+import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
@@ -383,7 +384,23 @@ export default function Page() {
   }
 
   // Loading shell while Clerk + Convex resolve the viewer.
-  if (!clerkLoaded || !viewerId || me === undefined) {
+  if (!clerkLoaded) {
+    return (
+      <div>
+        <SiteHeader pageName="Friends" />
+        <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+      </div>
+    )
+  }
+  if (activeUser.isDevMode && !activeUser.devUserId) {
+    return (
+      <div>
+        <SiteHeader pageName="Friends" />
+        <PickDevUserEmptyState pageName="friends" />
+      </div>
+    )
+  }
+  if (!viewerId || me === undefined) {
     return (
       <div>
         <SiteHeader pageName="Friends" />

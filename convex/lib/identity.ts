@@ -1,5 +1,6 @@
 import type { QueryCtx, MutationCtx, ActionCtx } from "../_generated/server"
 import type { Doc, Id } from "../_generated/dataModel"
+import { internal } from "../_generated/api"
 
 export type ResolvedIdentity = {
   subject: string
@@ -36,8 +37,7 @@ export async function resolveIdentity(
       user = await qCtx.db.get(args.devUserId)
     } else {
       const aCtx = ctx as ActionCtx
-      const { internal } = await import("../_generated/api")
-      user = await aCtx.runQuery(internal.users.getUserInternal, {
+      user = await aCtx.runQuery(internal.users.getUserById, {
         userId: args.devUserId,
       })
     }
@@ -50,7 +50,15 @@ export async function resolveIdentity(
     }
   }
   const identity = await ctx.auth.getUserIdentity()
-  if (!identity) throw new Error("Not authenticated")
+  if (!identity) {
+    if (args.devUserId) {
+      throw new Error(
+        "devUserId was passed but CONVEX_DEV_MODE is not 'true' on the Convex deployment. " +
+          "Run: npx convex env set CONVEX_DEV_MODE true"
+      )
+    }
+    throw new Error("Not authenticated")
+  }
   return {
     subject: identity.subject,
     email: identity.email ?? "",
