@@ -3,15 +3,17 @@
 import * as React from "react"
 import { CheckIcon, CopyIcon, ExternalLinkIcon, TagIcon } from "lucide-react"
 
+import { api } from "@/convex/_generated/api"
 import type { Doc } from "@/convex/_generated/dataModel"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { cn } from "@/lib/utils"
 
 export type AdCardProps = {
   ad: Doc<"ads">
-  // Optional handlers wired from the host page. Tracking is not plumbed in
-  // this PR — PR #8 will wrap these to emit impression / click events.
+  // Optional CTA-click hook. Firing order: `onCtaClick` runs, then the
+  // impression/click metric is recorded, then the external URL opens.
   onCtaClick?: () => void
   // Fired when the viewer taps "Save coupon". Host should persist via
   // `api.communityAds.saveCoupon`. Ignored when `ad.couponCode` is unset.
@@ -22,6 +24,8 @@ export type AdCardProps = {
   // "community" renders the ad the way a community viewer would see it
   // (clean, CTA-forward). "business" is for the owner's preview — same
   // shape but we show the status pill + muted affordance around coupon.
+  // Impression tracking only fires in "community" context so the owner
+  // previewing their own ad doesn't inflate their metrics.
   context?: "community" | "business"
   className?: string
   statusBadge?: React.ReactNode
@@ -44,10 +48,21 @@ function statusTone(
   }
 }
 
+const IMPRESSION_DEDUPE_MS = 60 * 60 * 1000 // 1 hour per ad per session
+
 // Shared ad rendering. Attempts to show an image, falls back to a gradient
 // header so a caption-only ad still has visual weight. Caption is clamped
 // to 3 lines via Tailwind's `line-clamp-3`. CTA / coupon buttons are kept
 // stylistically prominent because community viewers will tap them most.
+//
+// Tracking:
+//   - Impression: IntersectionObserver fires once per card per session
+//     when the card enters the viewport. Dedupe uses sessionStorage
+//     keyed by ad id (1h window) so a viewer scrolling past the same
+//     ad repeatedly doesn't inflate counts. Only fires in "community"
+//     context so the business-preview page doesn't self-inflate.
+//   - Click: recorded whenever the CTA button is pressed, regardless of
+//     whether the URL actually opens (user may cancel the pop-up).
 export function AdCard({
   ad,
   onCtaClick,
@@ -58,6 +73,66 @@ export function AdCard({
   statusBadge,
 }: AdCardProps) {
   const [copied, setCopied] = React.useState(false)
+  const cardRef = React.useRef<HTMLDivElement | null>(null)
+
+  // Both telemetry mutations are optional at call-time — if the dev has
+  // disabled the metrics API (e.g. future feature flag) we simply drop
+  // the signal rather than throw.
+  const recordImpression = useIdentifiedMutation(
+    api.adMetrics.recordImpression,
+  )
+  const recordClick = useIdentifiedMutation(api.adMetrics.recordClick)
+
+  // IntersectionObserver for impression tracking. Re-runs when the ad
+  // id changes so each card in a feed observes independently.
+  React.useEffect(() => {
+    if (context !== "community") return
+    if (typeof window === "undefined") return
+    const node = cardRef.current
+    if (!node) return
+    // SSR / older browser fallback: skip tracking rather than crash.
+    if (typeof IntersectionObserver === "undefined") return
+
+    const adId = ad._id
+
+    let fired = false
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          if (fired) return
+          fired = true
+          try {
+            const key = `ad-imp-${adId}`
+            const last = Number(
+              window.sessionStorage.getItem(key) ?? 0,
+            )
+            if (Date.now() - last < IMPRESSION_DEDUPE_MS) {
+              observer.disconnect()
+              return
+            }
+            window.sessionStorage.setItem(key, String(Date.now()))
+          } catch {
+            // sessionStorage can throw in private mode on some browsers;
+            // fall through and still record the impression.
+          }
+          // Fire-and-forget — swallow rejection so a telemetry error
+          // never surfaces in the viewer's UI.
+          void recordImpression({ adId }).catch(() => {})
+          observer.disconnect()
+          return
+        }
+      },
+      { threshold: 0.5 },
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+    // `recordImpression` identity changes each render but we intentionally
+    // keep the effect keyed only on ad id / context so we don't re-observe
+    // on every parent re-render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ad._id, context])
+
   const showStatusBadge =
     context === "business" &&
     (statusBadge ?? (
@@ -80,8 +155,19 @@ export function AdCard({
     }
   }
 
+  function handleCtaClick() {
+    onCtaClick?.()
+    if (context === "community") {
+      void recordClick({ adId: ad._id }).catch(() => {})
+    }
+    if (ad.ctaUrl) {
+      window.open(ad.ctaUrl, "_blank", "noopener,noreferrer")
+    }
+  }
+
   return (
     <div
+      ref={cardRef}
       className={cn(
         "overflow-hidden rounded-lg border bg-card transition-colors",
         className,
@@ -138,12 +224,7 @@ export function AdCard({
             {hasCta && (
               <Button
                 size="sm"
-                onClick={() => {
-                  onCtaClick?.()
-                  if (ad.ctaUrl) {
-                    window.open(ad.ctaUrl, "_blank", "noopener,noreferrer")
-                  }
-                }}
+                onClick={handleCtaClick}
                 // When a host doesn't wire a handler in "business" preview
                 // we still allow opening, but the button doesn't visually
                 // pretend to be a live CTA.
@@ -177,9 +258,9 @@ export function AdCard({
                   variant="outline"
                   onClick={() => onSaveCoupon?.()}
                   disabled={!onSaveCoupon && context === "business"}
-                  // Coupons don't need an href — they're intended to be
-                  // saved into a wallet/pasted at checkout. PR #8 wires this
-                  // to a couponSaves event.
+                  // Save path records its couponSaves counter from the
+                  // server-side mutation (see communityAds.saveCoupon) so
+                  // we don't double-count by firing from the client too.
                 >
                   <TagIcon className="size-3.5" />
                   {onSaveCoupon ? "Save coupon" : ad.couponCode}

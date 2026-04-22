@@ -236,6 +236,14 @@ export const saveCoupon = mutation({
       couponCode: ad.couponCode,
       savedAt: Date.now(),
     })
+    // Fire-and-forget couponSaves metric bump. Scheduler decouples the
+    // metric write from this transaction so a telemetry hiccup can't
+    // block the viewer's wallet update.
+    await ctx.scheduler.runAfter(
+      0,
+      internal.adMetrics.recordCouponSaveInternal,
+      { adId: args.adId },
+    )
     return { couponCode: ad.couponCode, alreadySaved: false as const }
   },
 })
@@ -256,6 +264,13 @@ export const markCouponUsed = mutation({
     if (row.userId !== callerId) return
     if (row.usedAt !== undefined) return
     await ctx.db.patch(args.savedCouponId, { usedAt: Date.now() })
+    // Fire-and-forget couponUses metric bump. Same rationale as
+    // saveCoupon — metrics write is decoupled from the patch.
+    await ctx.scheduler.runAfter(
+      0,
+      internal.adMetrics.recordCouponUseInternal,
+      { adId: row.adId },
+    )
   },
 })
 

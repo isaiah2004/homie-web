@@ -6,6 +6,13 @@ import { useParams } from "next/navigation"
 import { useQuery } from "convex/react"
 import { toast } from "sonner"
 import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  XAxis,
+  YAxis,
+} from "recharts"
+import {
   ArrowLeftIcon,
   CheckCircle2Icon,
   SendIcon,
@@ -21,10 +28,39 @@ import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart"
 import { Separator } from "@/components/ui/separator"
 import { AdCard } from "@/components/ad-card"
 
 const isDevMode = process.env.NEXT_PUBLIC_DEV_MODE === "true"
+
+const chartConfig = {
+  impressions: { label: "Impressions", color: "var(--chart-1)" },
+  clicks: { label: "Clicks", color: "var(--chart-2)" },
+  couponSaves: { label: "Coupon saves", color: "var(--chart-3)" },
+} satisfies ChartConfig
+
+function formatShortDate(d: string) {
+  // Dates come from the backend in `YYYY-MM-DD` UTC form; parse as UTC
+  // so the tick label lines up with the bucket rather than drifting by
+  // the viewer's timezone offset.
+  const [y, m, day] = d.split("-").map(Number)
+  const date = new Date(Date.UTC(y, (m ?? 1) - 1, day ?? 1))
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  })
+}
+
+function formatCtr(n: number) {
+  return `${(n * 100).toFixed(1)}%`
+}
 
 export default function Page() {
   const activeUser = useActiveUser()
@@ -43,6 +79,18 @@ export default function Page() {
   const data = useQuery(
     api.ads.getAdForBusiness,
     skip ? "skip" : { adId, ...identityArg },
+  )
+
+  // Analytics — manager+ gated server-side. Roles below manager will get
+  // an error from the backend; rendering below guards on `data.myRole`.
+  const canViewAnalytics =
+    data != null &&
+    data.myRole !== "employee"
+  const analytics = useQuery(
+    api.adMetrics.getAdAnalytics,
+    skip || !canViewAnalytics
+      ? "skip"
+      : { adId, days: 30, ...identityArg },
   )
 
   const submitForApproval = useIdentifiedMutation(api.ads.submitForApproval)
@@ -92,6 +140,19 @@ export default function Page() {
     (myRole === "owner" || myRole === "admin" || myRole === "manager") &&
     ad.status === "draft"
 
+  // Top-of-page totals across the entire 30d window.
+  const totals = (analytics ?? []).reduce(
+    (acc, row) => ({
+      impressions: acc.impressions + row.impressions,
+      clicks: acc.clicks + row.clicks,
+      couponSaves: acc.couponSaves + row.couponSaves,
+      couponUses: acc.couponUses + row.couponUses,
+    }),
+    { impressions: 0, clicks: 0, couponSaves: 0, couponUses: 0 },
+  )
+  const overallCtr =
+    totals.impressions > 0 ? totals.clicks / totals.impressions : 0
+
   async function handleSubmit() {
     try {
       await submitForApproval({ adId })
@@ -114,7 +175,7 @@ export default function Page() {
     <div>
       <SiteHeader pageName="Ad" />
       <div className="flex flex-1 flex-col">
-        <div className="@container/main mx-auto w-full max-w-3xl flex-1 p-4 md:p-6">
+        <div className="@container/main mx-auto w-full max-w-5xl flex-1 p-4 md:p-6">
           <Button variant="ghost" size="sm" asChild className="mb-3">
             <Link href={`/dashboard/businesses/${businessId}/ads`}>
               <ArrowLeftIcon className="size-4" />
@@ -123,11 +184,111 @@ export default function Page() {
           </Button>
 
           <div className="grid gap-4 md:grid-cols-[1fr_320px]">
-            <div>
-              <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
-                Preview
-              </h2>
-              <AdCard ad={ad} context="business" />
+            <div className="space-y-4">
+              <div>
+                <h2 className="mb-2 text-sm font-semibold text-muted-foreground">
+                  Preview
+                </h2>
+                <AdCard ad={ad} context="business" />
+              </div>
+
+              {canViewAnalytics && (
+                <div className="rounded-lg border bg-card p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold">Analytics</h3>
+                    <span className="text-[10px] text-muted-foreground">
+                      Last 30 days
+                    </span>
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+                    <MiniStat
+                      label="Impressions"
+                      value={totals.impressions.toLocaleString()}
+                    />
+                    <MiniStat
+                      label="Clicks"
+                      value={totals.clicks.toLocaleString()}
+                    />
+                    <MiniStat label="CTR" value={formatCtr(overallCtr)} />
+                    <MiniStat
+                      label="Coupon saves"
+                      value={totals.couponSaves.toLocaleString()}
+                    />
+                    <MiniStat
+                      label="Coupon uses"
+                      value={totals.couponUses.toLocaleString()}
+                    />
+                  </div>
+
+                  <Separator className="my-4" />
+
+                  {analytics === undefined ? (
+                    <p className="text-xs text-muted-foreground">
+                      Loading chart…
+                    </p>
+                  ) : analytics.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      No metrics recorded yet.
+                    </p>
+                  ) : (
+                    <ChartContainer
+                      config={chartConfig}
+                      className="aspect-auto h-[260px] w-full"
+                    >
+                      <LineChart data={analytics}>
+                        <CartesianGrid vertical={false} />
+                        <XAxis
+                          dataKey="date"
+                          tickLine={false}
+                          axisLine={false}
+                          tickMargin={8}
+                          minTickGap={24}
+                          tickFormatter={formatShortDate}
+                        />
+                        <YAxis
+                          allowDecimals={false}
+                          tickLine={false}
+                          axisLine={false}
+                          width={32}
+                        />
+                        <ChartTooltip
+                          cursor={false}
+                          content={
+                            <ChartTooltipContent
+                              labelFormatter={(value) =>
+                                formatShortDate(String(value))
+                              }
+                              indicator="dot"
+                            />
+                          }
+                        />
+                        <Line
+                          dataKey="impressions"
+                          type="monotone"
+                          stroke="var(--color-impressions)"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                        <Line
+                          dataKey="clicks"
+                          type="monotone"
+                          stroke="var(--color-clicks)"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                        <Line
+                          dataKey="couponSaves"
+                          type="monotone"
+                          stroke="var(--color-couponSaves)"
+                          strokeWidth={2}
+                          dot={false}
+                        />
+                      </LineChart>
+                    </ChartContainer>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-3">
@@ -158,19 +319,11 @@ export default function Page() {
                   {ad.status === "approved" && (
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <CheckCircle2Icon className="size-3.5 text-green-600" />
-                      Approved — visible in communities once PR #7 ships
-                      ad placements.
+                      Approved — placed weekly into communities by the ad
+                      rotation cron.
                     </div>
                   )}
                 </div>
-              </div>
-
-              <div className="rounded-lg border bg-card p-4">
-                <h3 className="text-sm font-semibold">Analytics</h3>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Impressions, clicks, and coupon usage will appear here
-                  once tracking ships in PR #8.
-                </p>
               </div>
 
               <div className="rounded-lg border bg-card p-4">
@@ -196,6 +349,21 @@ export default function Page() {
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function MiniStat({
+  label,
+  value,
+}: {
+  label: string
+  value: React.ReactNode
+}) {
+  return (
+    <div className="rounded-md border bg-background p-2">
+      <p className="text-[10px] text-muted-foreground">{label}</p>
+      <p className="mt-0.5 text-sm font-semibold tabular-nums">{value}</p>
     </div>
   )
 }

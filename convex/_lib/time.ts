@@ -22,3 +22,34 @@ export function currentMondayUTCms(): number {
   )
   return monday.getTime()
 }
+
+// Canonical day bucket for ad metrics: `YYYY-MM-DD` in UTC. Used as the
+// `dateBucket` key for `adMetrics`; a single index lookup resolves
+// "today's counts for this ad" in O(1).
+export function todayUtcBucket(): string {
+  const d = new Date()
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+}
+
+// Same bucket format but for an arbitrary epoch-ms value. Used when
+// back-filling / generating the continuous x-axis for analytics charts.
+export function utcBucketFromMs(ms: number): string {
+  const d = new Date(ms)
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+}
+
+// Returns the UTC day-buckets for the last `n` days, oldest → newest.
+// Used by analytics queries to pad missing metric rows with zeros so
+// charts render a continuous x-axis regardless of sparse data.
+export function lastNDaysBuckets(n: number): string[] {
+  const out: string[] = []
+  const today = new Date()
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(today)
+    d.setUTCDate(today.getUTCDate() - i)
+    out.push(
+      `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`,
+    )
+  }
+  return out
+}
