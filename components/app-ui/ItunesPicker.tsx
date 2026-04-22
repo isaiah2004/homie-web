@@ -1,8 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { useAction } from "convex/react"
 import { api } from "@/convex/_generated/api"
+import { useIdentifiedAction } from "@/hooks/use-identified"
 import { MediaSearchPicker } from "./MediaSearchPicker"
 import type { NormalizedItunesResult } from "@/convex/itunes"
 
@@ -21,7 +21,7 @@ export function ItunesPicker({
   onClear,
   placeholder = "Search movies…",
 }: Props) {
-  const search = useAction(api.itunes.searchItunes)
+  const search = useIdentifiedAction(api.itunes.searchItunes)
   const searchFn = React.useCallback(
     async (query: string) =>
       (await search({ query, limit: 6 })) as ItunesPick[],

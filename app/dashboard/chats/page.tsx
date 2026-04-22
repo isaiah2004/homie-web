@@ -2,12 +2,13 @@
 
 import * as React from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { useUser } from "@clerk/nextjs"
 import { useMutation, useQuery } from "convex/react"
 import { toast } from "sonner"
 
 import { api } from "@/convex/_generated/api"
 import { Doc, Id } from "@/convex/_generated/dataModel"
+import { useActiveUser } from "@/hooks/use-active-user"
+import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
@@ -108,27 +109,35 @@ function ChatsContent() {
   const searchParams = useSearchParams()
   const withParam = searchParams.get("with") as Id<"users"> | null
 
-  const { user: clerkUser, isLoaded: clerkLoaded } = useUser()
-  const email = clerkUser?.primaryEmailAddress?.emailAddress
-  const username = clerkUser?.username ?? undefined
-  const clerkName =
-    clerkUser?.fullName ||
-    [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(" ") ||
-    clerkUser?.username ||
-    undefined
+  const activeUser = useActiveUser()
+  const clerkLoaded = activeUser.isLoaded
+  const email = activeUser.email ?? undefined
+  const username = activeUser.username ?? undefined
+  const name = activeUser.fullName ?? undefined
 
   const getOrCreateUser = useMutation(api.users.getOrCreateUser)
   const [viewerId, setViewerId] = React.useState<Id<"users"> | null>(null)
 
   React.useEffect(() => {
+    if (activeUser.isDevMode) {
+      setViewerId(activeUser.devUserId)
+      return
+    }
     if (!email) return
-    getOrCreateUser({ email, username, name: clerkName })
+    getOrCreateUser({ email, username, name })
       .then((id) => setViewerId(id as Id<"users">))
       .catch((err) => {
         console.error(err)
         toast.error("Failed to sync your account")
       })
-  }, [email, username, clerkName, getOrCreateUser])
+  }, [
+    activeUser.isDevMode,
+    activeUser.devUserId,
+    email,
+    username,
+    name,
+    getOrCreateUser,
+  ])
 
   // Queries
   const conversations = useQuery(
@@ -258,7 +267,23 @@ function ChatsContent() {
   }
 
   // Loading gate
-  if (!clerkLoaded || !viewerId) {
+  if (!clerkLoaded) {
+    return (
+      <div>
+        <SiteHeader pageName="Chats" />
+        <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+      </div>
+    )
+  }
+  if (activeUser.isDevMode && !activeUser.devUserId) {
+    return (
+      <div>
+        <SiteHeader pageName="Chats" />
+        <PickDevUserEmptyState pageName="chats" />
+      </div>
+    )
+  }
+  if (!viewerId) {
     return (
       <div>
         <SiteHeader pageName="Chats" />

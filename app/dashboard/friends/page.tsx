@@ -2,12 +2,13 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useUser } from "@clerk/nextjs"
 import { useMutation, useQuery } from "convex/react"
 import { toast } from "sonner"
 
 import { api } from "@/convex/_generated/api"
 import { Doc, Id } from "@/convex/_generated/dataModel"
+import { useActiveUser } from "@/hooks/use-active-user"
+import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
@@ -204,27 +205,37 @@ function UserProfilePane({
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Page() {
-  const { user: clerkUser, isLoaded: clerkLoaded } = useUser()
-  const email = clerkUser?.primaryEmailAddress?.emailAddress
-  const username = clerkUser?.username ?? undefined
-  const clerkName =
-    clerkUser?.fullName ||
-    [clerkUser?.firstName, clerkUser?.lastName].filter(Boolean).join(" ") ||
-    clerkUser?.username ||
-    undefined
+  const activeUser = useActiveUser()
+  const clerkLoaded = activeUser.isLoaded
+  const email = activeUser.email ?? undefined
+  const username = activeUser.username ?? undefined
+  const name = activeUser.fullName ?? undefined
 
   const getOrCreateUser = useMutation(api.users.getOrCreateUser)
   const [viewerId, setViewerId] = React.useState<Id<"users"> | null>(null)
 
+  // Dev mode: the selected seeded user's id IS the viewer id. Production
+  // goes through getOrCreateUser to map Clerk email → Convex users row.
   React.useEffect(() => {
+    if (activeUser.isDevMode) {
+      setViewerId(activeUser.devUserId)
+      return
+    }
     if (!email) return
-    getOrCreateUser({ email, username, name: clerkName })
+    getOrCreateUser({ email, username, name })
       .then((id) => setViewerId(id as Id<"users">))
       .catch((err) => {
         console.error(err)
         toast.error("Failed to sync your account")
       })
-  }, [email, username, clerkName, getOrCreateUser])
+  }, [
+    activeUser.isDevMode,
+    activeUser.devUserId,
+    email,
+    username,
+    name,
+    getOrCreateUser,
+  ])
 
   const me = useQuery(
     api.users.getUser,
@@ -373,7 +384,23 @@ export default function Page() {
   }
 
   // Loading shell while Clerk + Convex resolve the viewer.
-  if (!clerkLoaded || !viewerId || me === undefined) {
+  if (!clerkLoaded) {
+    return (
+      <div>
+        <SiteHeader pageName="Friends" />
+        <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+      </div>
+    )
+  }
+  if (activeUser.isDevMode && !activeUser.devUserId) {
+    return (
+      <div>
+        <SiteHeader pageName="Friends" />
+        <PickDevUserEmptyState pageName="friends" />
+      </div>
+    )
+  }
+  if (!viewerId || me === undefined) {
     return (
       <div>
         <SiteHeader pageName="Friends" />

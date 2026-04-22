@@ -6,6 +6,7 @@ import { NavDocuments } from "@/components/nav-documents"
 import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
 import { Show, useClerk, useUser } from "@clerk/nextjs"
+import { useActiveUser } from "@/hooks/use-active-user"
 import {
   Sidebar,
   SidebarContent,
@@ -160,11 +161,9 @@ const data = {
   // ],
 }
 
-export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
-  const { user } = useUser()
-  const { signOut } = useClerk()
-  const { isMobile } = useSidebar()
+const isDevMode = process.env.NEXT_PUBLIC_DEV_MODE === "true"
 
+export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -190,88 +189,133 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <Show when="signed-in">
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <SidebarMenuButton
-                    size="lg"
-                    className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-                  >
-                    <Avatar className="h-8 w-8 rounded-lg grayscale">
-                      <AvatarImage src={user?.imageUrl} alt={user?.fullName || "User"} />
-                      <AvatarFallback className="rounded-lg">
-                        {user?.firstName?.[0] || user?.username?.[0] || user?.emailAddresses?.[0]?.emailAddress[0] || "U"}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="grid flex-1 text-left text-sm leading-tight">
-                      <span className="truncate font-medium">
-                        {user?.firstName && user?.lastName
-                          ? `${user.firstName} ${user.lastName}`
-                          : user?.username || user?.emailAddresses?.[0]?.emailAddress || "User"}
-                      </span>
-                      <span className="truncate text-xs text-muted-foreground">
-                        {user?.emailAddresses?.[0]?.emailAddress || ""}
-                      </span>
-                    </div>
-                  </SidebarMenuButton>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
-                  side={isMobile ? "bottom" : "right"}
-                  align="end"
-                  sideOffset={4}
-                >
-                  <DropdownMenuLabel className="p-0 font-normal">
-                    <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
-                      <Avatar className="h-8 w-8 rounded-lg">
-                        <AvatarImage src={user?.imageUrl} alt={user?.fullName || "User"} />
-                        <AvatarFallback className="rounded-lg">
-                          {user?.firstName?.[0] || user?.username?.[0] || user?.emailAddresses?.[0]?.emailAddress[0] || "U"}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="grid flex-1 text-left text-sm leading-tight">
-                        <span className="truncate font-medium">
-                          {user?.firstName && user?.lastName
-                            ? `${user.firstName} ${user.lastName}`
-                            : user?.username || user?.emailAddresses?.[0]?.emailAddress || "User"}
-                        </span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {user?.emailAddresses?.[0]?.emailAddress || ""}
-                        </span>
-                      </div>
-                    </div>
-                  </DropdownMenuLabel>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuGroup>
-                    <DropdownMenuItem asChild>
-                      <Link href="/dashboard/profile" className="cursor-pointer">
-                        <User className="mr-2 h-4 w-4" />
-                        Account
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link href="/dashboard/notifications" className="cursor-pointer">
-                        <Bell className="mr-2 h-4 w-4" />
-                        Notifications
-                      </Link>
-                    </DropdownMenuItem>
-                  </DropdownMenuGroup>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => signOut()}>
-                    <LogOut className="mr-2 h-4 w-4" />
-                    Log out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </Show>
-            <Show when="signed-out">
-              <SidebarMenuButton size="lg">
-                <span className="text-sm text-muted-foreground">Not signed in</span>
-              </SidebarMenuButton>
-            </Show>
+            {isDevMode ? <DevUserFooter /> : <ClerkUserFooter />}
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
+  )
+}
+
+// Production footer — Clerk's user object drives the avatar + dropdown.
+// Calling `useUser()` / `useClerk()` requires a ClerkProvider ancestor, so
+// we guard this subcomponent behind `isDevMode === false` in the parent.
+function ClerkUserFooter() {
+  const { user } = useUser()
+  const { signOut } = useClerk()
+  const { isMobile } = useSidebar()
+
+  return (
+    <>
+      <Show when="signed-in">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <SidebarMenuButton
+              size="lg"
+              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+            >
+              <Avatar className="h-8 w-8 rounded-lg grayscale">
+                <AvatarImage src={user?.imageUrl} alt={user?.fullName || "User"} />
+                <AvatarFallback className="rounded-lg">
+                  {user?.firstName?.[0] || user?.username?.[0] || user?.emailAddresses?.[0]?.emailAddress[0] || "U"}
+                </AvatarFallback>
+              </Avatar>
+              <div className="grid flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-medium">
+                  {user?.firstName && user?.lastName
+                    ? `${user.firstName} ${user.lastName}`
+                    : user?.username || user?.emailAddresses?.[0]?.emailAddress || "User"}
+                </span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {user?.emailAddresses?.[0]?.emailAddress || ""}
+                </span>
+              </div>
+            </SidebarMenuButton>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            className="w-[--radix-dropdown-menu-trigger-width] min-w-56 rounded-lg"
+            side={isMobile ? "bottom" : "right"}
+            align="end"
+            sideOffset={4}
+          >
+            <DropdownMenuLabel className="p-0 font-normal">
+              <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
+                <Avatar className="h-8 w-8 rounded-lg">
+                  <AvatarImage src={user?.imageUrl} alt={user?.fullName || "User"} />
+                  <AvatarFallback className="rounded-lg">
+                    {user?.firstName?.[0] || user?.username?.[0] || user?.emailAddresses?.[0]?.emailAddress[0] || "U"}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-medium">
+                    {user?.firstName && user?.lastName
+                      ? `${user.firstName} ${user.lastName}`
+                      : user?.username || user?.emailAddresses?.[0]?.emailAddress || "User"}
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {user?.emailAddresses?.[0]?.emailAddress || ""}
+                  </span>
+                </div>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuItem asChild>
+                <Link href="/dashboard/profile" className="cursor-pointer">
+                  <User className="mr-2 h-4 w-4" />
+                  Account
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/dashboard/notifications" className="cursor-pointer">
+                  <Bell className="mr-2 h-4 w-4" />
+                  Notifications
+                </Link>
+              </DropdownMenuItem>
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => signOut()}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Log out
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </Show>
+      <Show when="signed-out">
+        <SidebarMenuButton size="lg">
+          <span className="text-sm text-muted-foreground">Not signed in</span>
+        </SidebarMenuButton>
+      </Show>
+    </>
+  )
+}
+
+// Dev-mode footer — shows the selected seeded user with a DEV pill. No
+// sign-out or avatar image; the floating DevUserSwitcher handles account
+// swaps. Never renders <UserButton>, so we don't need a ClerkProvider.
+function DevUserFooter() {
+  const activeUser = useActiveUser()
+  const fallback =
+    (activeUser.fullName ?? activeUser.email ?? "U").trim().charAt(0) || "U"
+
+  return (
+    <SidebarMenuButton size="lg" className="cursor-default">
+      <Avatar className="h-8 w-8 rounded-lg">
+        <AvatarFallback className="rounded-lg bg-gradient-to-br from-amber-400 to-orange-600 text-white">
+          {fallback.toUpperCase()}
+        </AvatarFallback>
+      </Avatar>
+      <div className="grid flex-1 text-left text-sm leading-tight">
+        <span className="truncate font-medium flex items-center gap-1.5">
+          {activeUser.fullName ?? "No user"}
+          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold tracking-wider text-amber-700 dark:text-amber-400">
+            DEV
+          </span>
+        </span>
+        <span className="truncate text-xs text-muted-foreground">
+          {activeUser.username ? `@${activeUser.username}` : activeUser.email ?? ""}
+        </span>
+      </div>
+    </SidebarMenuButton>
   )
 }

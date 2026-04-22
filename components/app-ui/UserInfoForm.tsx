@@ -14,10 +14,11 @@ import {
   PlusIcon,
   XIcon,
 } from "lucide-react"
-import { useAction, useMutation, useQuery } from "convex/react"
+import { useMutation, useQuery } from "convex/react"
 import { api } from "@/convex/_generated/api"
 import { Id } from "@/convex/_generated/dataModel"
-import { useUser } from "@clerk/nextjs"
+import { useActiveUser } from "@/hooks/use-active-user"
+import { useIdentifiedAction } from "@/hooks/use-identified"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -315,7 +316,9 @@ function AddFromGoogleMapsDialog({
   const [url, setUrl] = React.useState("")
   const [isParsing, setIsParsing] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-  const parseLink = useAction(api.parseGoogleMapsLink.parseGoogleMapsLink)
+  const parseLink = useIdentifiedAction(
+    api.parseGoogleMapsLink.parseGoogleMapsLink
+  )
 
   async function handleParse() {
     if (!url.trim()) return
@@ -745,7 +748,8 @@ function MediaRow({
 // ── Main form ────────────────────────────────────────────────────────────────
 
 export function UserInfoForm() {
-  const { user, isLoaded: isUserLoaded } = useUser()
+  const activeUser = useActiveUser()
+  const isUserLoaded = activeUser.isLoaded
   const [activeRole, setActiveRole] = React.useState<string[]>([])
   const [isLoading, setIsLoading] = React.useState(false)
 
@@ -773,32 +777,75 @@ export function UserInfoForm() {
   const places = useFieldArray({ control: form.control, name: "places" })
   const projects = useFieldArray({ control: form.control, name: "projects" })
 
-  // The canonical identity for Name comes from Clerk — the form field is
-  // uneditable here and simply submits whatever Clerk provides.
-  const clerkFullName = React.useMemo(() => {
-    if (!user) return ""
-    if (user.fullName) return user.fullName
-    const parts = [user.firstName, user.lastName].filter(Boolean) as string[]
-    if (parts.length > 0) return parts.join(" ")
-    return user.username ?? ""
-  }, [user])
+  // The canonical identity for Name comes from the active user (Clerk in
+  // production, seeded dev user in dev mode). The form field is uneditable
+  // here and simply submits whatever the identity source provides.
+  const authFullName = React.useMemo(() => {
+    return activeUser.fullName ?? activeUser.username ?? ""
+  }, [activeUser.fullName, activeUser.username])
 
-  // Auto-load user profile on page load
+  // Auto-load user profile on page load. Dev mode uses the seeded user's
+  // doc directly; production looks up by email.
+  const devProfile = useQuery(
+    api.users.getUser,
+    activeUser.isDevMode && activeUser.devUserId
+      ? { userId: activeUser.devUserId }
+      : "skip"
+  )
+
   React.useEffect(() => {
-    if (isUserLoaded && user?.primaryEmailAddress?.emailAddress) {
-      // Use fetchQuery instead of useQuery for one-time fetch in useEffect
+    if (!isUserLoaded) return
+
+    // Dev mode: hydrate directly from the selected user's doc.
+    if (activeUser.isDevMode) {
+      if (devProfile) {
+        form.reset({
+          name: authFullName || devProfile.name || "",
+          visibility: devProfile.visibility || "friends",
+          dob: devProfile.dob || "",
+          workplace: devProfile.workplace || {
+            name: "",
+            mapsLink: "",
+            visibility: "none",
+          },
+          school: devProfile.school || {
+            name: "",
+            mapsLink: "",
+            visibility: "none",
+          },
+          interests: devProfile.interests || [],
+          media: devProfile.media || [],
+          places: devProfile.places || [],
+          projects: devProfile.projects || [],
+        })
+        if (devProfile.currentStatus) {
+          setActiveRole(devProfile.currentStatus)
+        }
+      }
+      return
+    }
+
+    // Production: look up by email (Clerk identity).
+    if (activeUser.email) {
+      const email = activeUser.email
       import("convex/nextjs").then(({ fetchQuery }) => {
-        fetchQuery(api.users.getUserByEmail, { email: user.primaryEmailAddress!.emailAddress })
+        fetchQuery(api.users.getUserByEmail, { email })
           .then((userProfile) => {
             if (userProfile) {
-              // Populate form with existing data. Name is always taken from
-              // Clerk (authoritative source) and ignored from Convex.
               form.reset({
-                name: clerkFullName || userProfile.name || "",
+                name: authFullName || userProfile.name || "",
                 visibility: userProfile.visibility || "friends",
                 dob: userProfile.dob || "",
-                workplace: userProfile.workplace || { name: "", mapsLink: "", visibility: "none" },
-                school: userProfile.school || { name: "", mapsLink: "", visibility: "none" },
+                workplace: userProfile.workplace || {
+                  name: "",
+                  mapsLink: "",
+                  visibility: "none",
+                },
+                school: userProfile.school || {
+                  name: "",
+                  mapsLink: "",
+                  visibility: "none",
+                },
                 interests: userProfile.interests || [],
                 media: userProfile.media || [],
                 places: userProfile.places || [],
@@ -807,8 +854,8 @@ export function UserInfoForm() {
               if (userProfile.currentStatus) {
                 setActiveRole(userProfile.currentStatus)
               }
-            } else if (clerkFullName) {
-              form.setValue("name", clerkFullName)
+            } else if (authFullName) {
+              form.setValue("name", authFullName)
             }
           })
           .catch((err) => {
@@ -816,16 +863,23 @@ export function UserInfoForm() {
           })
       })
     }
-  }, [isUserLoaded, user, form, clerkFullName])
+  }, [
+    isUserLoaded,
+    activeUser.isDevMode,
+    activeUser.email,
+    devProfile,
+    form,
+    authFullName,
+  ])
 
-  // Keep the Name field in lock-step with Clerk in case it changes after
-  // initial load (e.g. the user updates their Clerk profile in another tab).
+  // Keep the Name field in lock-step with the auth source in case it
+  // changes after initial load.
   React.useEffect(() => {
-    if (clerkFullName) form.setValue("name", clerkFullName)
-  }, [clerkFullName, form])
+    if (authFullName) form.setValue("name", authFullName)
+  }, [authFullName, form])
 
   async function onSubmit(data: FormValues) {
-    if (!user?.primaryEmailAddress?.emailAddress) {
+    if (!activeUser.email) {
       toast.error("Authentication required", {
         description: "Please sign in to save your profile",
       })
@@ -834,12 +888,18 @@ export function UserInfoForm() {
 
     setIsLoading(true)
     try {
-      // Get or create user
-      const userId = await getOrCreateUser({
-        email: user.primaryEmailAddress.emailAddress,
-        name: data.name,
-        username: user.username ?? undefined,
-      })
+      // Dev mode: we already know the Convex user id — skip the
+      // getOrCreate round-trip and write straight to that row.
+      let userId: Id<"users">
+      if (activeUser.isDevMode && activeUser.devUserId) {
+        userId = activeUser.devUserId
+      } else {
+        userId = await getOrCreateUser({
+          email: activeUser.email,
+          name: data.name,
+          username: activeUser.username ?? undefined,
+        })
+      }
 
       // Update profile
       await updateProfile({
@@ -910,26 +970,30 @@ export function UserInfoForm() {
                 <FieldLabel htmlFor="profile-name">Full Name</FieldLabel>
                 <Input
                   id="profile-name"
-                  value={clerkFullName}
+                  value={authFullName}
                   readOnly
                   disabled
                   className="h-11 bg-muted/50 border-border cursor-not-allowed"
                 />
                 <FieldDescription className="mt-1">
-                  Managed in your Clerk account.
+                  {activeUser.isDevMode
+                    ? "Dev mode — pinned to the selected seeded user."
+                    : "Managed in your Clerk account."}
                 </FieldDescription>
               </Field>
               <Field className="gap-3">
                 <FieldLabel htmlFor="profile-username">Username</FieldLabel>
                 <Input
                   id="profile-username"
-                  value={user?.username ? `@${user.username}` : "—"}
+                  value={activeUser.username ? `@${activeUser.username}` : "—"}
                   readOnly
                   disabled
                   className="h-11 bg-muted/50 border-border cursor-not-allowed"
                 />
                 <FieldDescription className="mt-1">
-                  Your unique Clerk handle. Others can find you with this.
+                  {activeUser.isDevMode
+                    ? "Dev mode — set on the seeded user."
+                    : "Your unique Clerk handle. Others can find you with this."}
                 </FieldDescription>
               </Field>
             </div>
@@ -938,13 +1002,15 @@ export function UserInfoForm() {
                 <FieldLabel htmlFor="profile-email">Email</FieldLabel>
                 <Input
                   id="profile-email"
-                  value={user?.primaryEmailAddress?.emailAddress ?? "—"}
+                  value={activeUser.email ?? "—"}
                   readOnly
                   disabled
                   className="h-11 bg-muted/50 border-border cursor-not-allowed"
                 />
                 <FieldDescription className="mt-1">
-                  Managed in your Clerk account.
+                  {activeUser.isDevMode
+                    ? "Dev mode — set on the seeded user."
+                    : "Managed in your Clerk account."}
                 </FieldDescription>
               </Field>
               <Controller

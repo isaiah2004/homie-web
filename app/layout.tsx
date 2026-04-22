@@ -1,15 +1,15 @@
-import { Geist_Mono, Instrument_Sans, Inter } from "next/font/google"
+import { Geist_Mono, Inter } from "next/font/google"
 import type { Metadata } from "next"
 
 import { ThemeProvider } from "@/components/theme-provider"
-import { ClerkProvider } from "@clerk/nextjs"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import ConvexClientProvider from "@/components/ConvexClientProvider"
+import { AuthProviders } from "@/components/AuthProviders"
+import { DevUserSwitcher } from "@/components/dev/DevUserSwitcher"
 
 import { cn } from "@/lib/utils"
 import "./globals.css"
 
-const inter = Inter({subsets:['latin'],variable:'--font-sans'})
+const inter = Inter({ subsets: ["latin"], variable: "--font-sans" })
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -44,11 +44,10 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <ClerkProvider>
-            <ConvexClientProvider>
-              <TooltipProvider>{children}</TooltipProvider>
-            </ConvexClientProvider>
-          </ClerkProvider>
+          <AuthProviders>
+            <TooltipProvider>{children}</TooltipProvider>
+            <DevUserSwitcher />
+          </AuthProviders>
         </ThemeProvider>
       </body>
     </html>

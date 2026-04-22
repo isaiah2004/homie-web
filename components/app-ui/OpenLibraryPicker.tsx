@@ -1,8 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { useAction } from "convex/react"
 import { api } from "@/convex/_generated/api"
+import { useIdentifiedAction } from "@/hooks/use-identified"
 import { MediaSearchPicker } from "./MediaSearchPicker"
 import type { NormalizedOpenLibraryResult } from "@/convex/openLibrary"
 
@@ -21,7 +21,7 @@ export function OpenLibraryPicker({
   onClear,
   placeholder,
 }: Props) {
-  const search = useAction(api.openLibrary.searchOpenLibrary)
+  const search = useIdentifiedAction(api.openLibrary.searchOpenLibrary)
   const searchFn = React.useCallback(
     async (query: string) =>
       (await search({ query, limit: 6 })) as OpenLibraryPick[],

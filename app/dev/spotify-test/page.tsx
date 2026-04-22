@@ -4,9 +4,10 @@
 // Delete once the picker UI is in place.
 
 import { useState } from "react"
-import { Authenticated, Unauthenticated, useAction } from "convex/react"
+import { Authenticated, Unauthenticated } from "convex/react"
 import { SignInButton } from "@clerk/nextjs"
 import { api } from "@/convex/_generated/api"
+import { useIdentifiedAction } from "@/hooks/use-identified"
 
 type SpotifyKind = "track" | "album" | "artist" | "show"
 const ALL_KINDS: SpotifyKind[] = ["track", "album", "artist", "show"]
@@ -22,7 +23,7 @@ type Result = {
 }
 
 function Tester() {
-  const search = useAction(api.spotify.searchSpotify)
+  const search = useIdentifiedAction(api.spotify.searchSpotify)
   const [query, setQuery] = useState("radiohead")
   const [kinds, setKinds] = useState<SpotifyKind[]>([...ALL_KINDS])
   const [loading, setLoading] = useState(false)
@@ -135,7 +136,14 @@ function Tester() {
   )
 }
 
+const isDevMode = process.env.NEXT_PUBLIC_DEV_MODE === "true"
+
 export default function SpotifyTestPage() {
+  // In dev mode Convex auth is wired to a fake identity via devUserId, so
+  // Authenticated/Unauthenticated won't see a real signed-in state. Render
+  // the tester directly; the picker already threads devUserId through the
+  // action.
+  if (isDevMode) return <Tester />
   return (
     <>
       <Authenticated>

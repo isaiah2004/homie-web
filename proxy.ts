@@ -1,6 +1,11 @@
 import { clerkMiddleware } from "@clerk/nextjs/server"
 
-export default clerkMiddleware()
+const isDevMode = process.env.NEXT_PUBLIC_DEV_MODE === "true"
+
+// In dev mode we short-circuit the middleware entirely so request handling
+// never touches Clerk (no Clerk keys needed locally). In production this
+// is the standard Clerk middleware.
+export default isDevMode ? () => undefined : clerkMiddleware()
 
 export const config = {
   matcher: [

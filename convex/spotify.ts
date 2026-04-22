@@ -7,6 +7,7 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
+import { resolveIdentity } from "./lib/identity";
 
 const SPOTIFY_ACCOUNTS_URL = "https://accounts.spotify.com/api/token";
 const SPOTIFY_API_BASE = "https://api.spotify.com/v1";
@@ -223,12 +224,10 @@ export const searchSpotify = action({
     query: v.string(),
     kinds: v.optional(v.array(kindValidator)),
     limit: v.optional(v.number()),
+    devUserId: v.optional(v.id("users")),
   },
-  handler: async (ctx, { query, kinds, limit }) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (identity === null) {
-      throw new Error("Not authenticated");
-    }
+  handler: async (ctx, { query, kinds, limit, devUserId }) => {
+    await resolveIdentity(ctx, { devUserId });
 
     const q = query.trim().slice(0, MAX_QUERY_LENGTH);
     if (!q) return [] as NormalizedSpotifyResult[];

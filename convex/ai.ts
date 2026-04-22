@@ -2,10 +2,12 @@
 import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
-import { createOpenAI } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText, stepCountIs } from "ai";
 import type { Doc } from "./_generated/dataModel";
 import { buildAgentTools } from "./agentTools";
+
+const CHAT_MODEL = "gemini-3.1-flash-lite";
 
 const SYSTEM_PROMPT = [
   "You are Homie — a friendly, concise assistant the user chats with about their friends, what they like, and where they go.",
@@ -26,10 +28,10 @@ export const generateAIResponse = action({
     apiKey: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<string> => {
-    const apiKey = args.apiKey || process.env.OPENAI_API_KEY;
-    if (!apiKey) {
+    const googleKey = args.apiKey || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    if (!googleKey) {
       throw new Error(
-        "OPENAI_API_KEY environment variable is not set and no apiKey argument provided",
+        "GOOGLE_GENERATIVE_AI_API_KEY environment variable is not set and no apiKey argument provided",
       );
     }
 
@@ -52,9 +54,9 @@ export const generateAIResponse = action({
     }));
     chatHistory.push({ role: "user", content: args.userMessage });
 
-    const openaiInstance = createOpenAI({ apiKey });
+    const google = createGoogleGenerativeAI({ apiKey: googleKey });
     const { text } = await generateText({
-      model: openaiInstance("gpt-4o-mini"),
+      model: google(CHAT_MODEL),
       system: SYSTEM_PROMPT,
       messages: chatHistory,
       tools: buildAgentTools(ctx, askerId),

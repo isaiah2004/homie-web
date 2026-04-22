@@ -1,8 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { useAction } from "convex/react"
 import { api } from "@/convex/_generated/api"
+import { useIdentifiedAction } from "@/hooks/use-identified"
 import { MediaSearchPicker } from "./MediaSearchPicker"
 
 export type SpotifyKind = "track" | "album" | "artist" | "show"
@@ -32,7 +32,7 @@ export function SpotifyPicker({
   onClear,
   placeholder = "Search Spotify…",
 }: Props) {
-  const search = useAction(api.spotify.searchSpotify)
+  const search = useIdentifiedAction(api.spotify.searchSpotify)
   const searchFn = React.useCallback(
     async (query: string) =>
       (await search({ query, kinds, limit: 6 })) as SpotifyPick[],
