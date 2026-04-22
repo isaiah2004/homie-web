@@ -1,5 +1,10 @@
 import { v } from "convex/values";
-import { query, mutation, QueryCtx } from "./_generated/server";
+import {
+  query,
+  mutation,
+  internalMutation,
+  QueryCtx,
+} from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { resolveIdentity } from "./lib/identity";
@@ -245,5 +250,51 @@ export const listPendingInvitesForMe = query({
       return aStart - bStart;
     });
     return enriched;
+  },
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Internal variants
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Internal variant of `inviteToEvent` callable from internal actions (e.g.
+// the groupChatAgent scheduleEvent skill auto-inviting every group
+// member). The inviter is the event creator by design — pass it so the
+// notifier can populate a meaningful `creatorName` without re-querying.
+export const inviteInternal = internalMutation({
+  args: {
+    eventId: v.id("events"),
+    inviterId: v.id("users"),
+    userIds: v.array(v.id("users")),
+  },
+  handler: async (ctx, args) => {
+    const event = await ctx.db.get(args.eventId);
+    if (!event) throw new Error("Event not found");
+    const inviter = await ctx.db.get(args.inviterId);
+    const inviterName = inviter?.name ?? "Someone";
+    for (const userId of args.userIds) {
+      if (userId === args.inviterId) continue;
+      const existing = await getInviteForPair(ctx, args.eventId, userId);
+      if (existing) continue;
+      const inviteId = await ctx.db.insert("eventInvites", {
+        eventId: args.eventId,
+        inviterId: args.inviterId,
+        inviteeId: userId,
+        status: "pending",
+        createdAt: Date.now(),
+      });
+      await ctx.scheduler.runAfter(
+        0,
+        internal.notifications.createNotification,
+        {
+          userId,
+          type: "event_invite",
+          title: `${inviterName} invited you to ${event.name}`,
+          body: event.description ?? undefined,
+          link: `/dashboard/events/${args.eventId}`,
+          meta: { eventId: args.eventId, inviteId },
+        },
+      );
+    }
   },
 });

@@ -3,6 +3,7 @@ import {
   query,
   mutation,
   internalQuery,
+  internalMutation,
   QueryCtx,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -368,5 +369,62 @@ export const getEventInternal = internalQuery({
   args: { eventId: v.id("events") },
   handler: async (ctx, { eventId }) => {
     return await ctx.db.get(eventId);
+  },
+});
+
+// Internal variant of `createEvent` callable from internal actions (e.g.
+// the groupChatAgent scheduleEvent skill). Takes `creatorId` explicitly
+// because actions don't have `ctx.auth` scoped to a specific Clerk user
+// — the caller is responsible for having already authorized the creator.
+export const createEventInternal = internalMutation({
+  args: {
+    creatorId: v.id("users"),
+    name: v.string(),
+    description: v.optional(v.string()),
+    startsAt: v.number(),
+    endsAt: v.optional(v.number()),
+    locationName: v.optional(v.string()),
+    locationAddress: v.optional(v.string()),
+    locationMapsLink: v.optional(v.string()),
+    locationLat: v.optional(v.number()),
+    locationLng: v.optional(v.number()),
+    visibility: v.union(
+      v.literal("public"),
+      v.literal("friends"),
+      v.literal("invitees"),
+    ),
+    coverImageUrl: v.optional(v.string()),
+    groupChatRef: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const name = args.name.trim();
+    if (name.length < 2) throw new Error("Event name is too short");
+    if (!Number.isFinite(args.startsAt)) {
+      throw new Error("Invalid startsAt");
+    }
+    if (
+      args.endsAt !== undefined &&
+      Number.isFinite(args.endsAt) &&
+      args.endsAt < args.startsAt
+    ) {
+      throw new Error("endsAt cannot be before startsAt");
+    }
+    return await ctx.db.insert("events", {
+      createdBy: args.creatorId,
+      name,
+      description: args.description,
+      startsAt: args.startsAt,
+      endsAt: args.endsAt,
+      locationName: args.locationName,
+      locationAddress: args.locationAddress,
+      locationMapsLink: args.locationMapsLink,
+      locationLat: args.locationLat,
+      locationLng: args.locationLng,
+      visibility: args.visibility,
+      coverImageUrl: args.coverImageUrl,
+      groupChatRef: args.groupChatRef,
+      status: "scheduled",
+      createdAt: Date.now(),
+    });
   },
 });
