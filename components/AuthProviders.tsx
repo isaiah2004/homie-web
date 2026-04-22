@@ -1,9 +1,29 @@
 "use client"
 
 import { ReactNode, useMemo } from "react"
-import { ClerkProvider, useAuth } from "@clerk/nextjs"
+import { ClerkProvider, useAuth as useClerkAuth } from "@clerk/nextjs"
 import { ConvexProvider, ConvexReactClient } from "convex/react"
 import { ConvexProviderWithClerk } from "convex/react-clerk"
+
+// ConvexProviderWithClerk decides between two token sources:
+//   - If `sessionClaims.aud === "convex"`, it uses Clerk's default session
+//     token directly (assumes all custom claims were merged into it).
+//   - Otherwise it fetches a token from the "convex" JWT template.
+//
+// Our Clerk instance has the short-lived default session token already set
+// to `aud: "convex"` (Clerk's newer Convex integration sets this), but it
+// does NOT include our `email`/`name` custom claims — those live only on
+// the "convex" JWT template. The backend's user lookups run on
+// `identity.email`, so using the default token breaks every authed query
+// with "User not found for identity".
+//
+// This shim passes through Clerk's hook but blanks out `sessionClaims` so
+// ConvexProviderWithClerk always takes the template path. Safe because
+// Convex only reads `sessionClaims` for this single branching decision.
+function useAuthForConvex() {
+  const clerk = useClerkAuth()
+  return { ...clerk, sessionClaims: undefined } as ReturnType<typeof useClerkAuth>
+}
 
 // Top-level auth + Convex provider. Two shapes:
 //   Production → ClerkProvider wraps ConvexProviderWithClerk (identical to
@@ -52,7 +72,7 @@ export function AuthProviders({ children }: { children: ReactNode }) {
   }
   return (
     <ClerkProvider>
-      <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
+      <ConvexProviderWithClerk client={convex} useAuth={useAuthForConvex}>
         {children}
       </ConvexProviderWithClerk>
     </ClerkProvider>
