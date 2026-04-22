@@ -95,6 +95,10 @@ export const createEvent = mutation({
       v.literal("invitees"),
     ),
     coverImageUrl: v.optional(v.string()),
+    // Optional community tie-in. Caller must be a member of the
+    // community to attach an event to it — prevents a drive-by
+    // non-member from spamming a community's calendar.
+    communityId: v.optional(v.id("communities")),
   },
   handler: async (ctx, args) => {
     const viewerId = await resolveViewerId(ctx, {
@@ -112,6 +116,21 @@ export const createEvent = mutation({
     ) {
       throw new Error("endsAt cannot be before startsAt");
     }
+    if (args.communityId) {
+      const membership = await ctx.db
+        .query("communityMembers")
+        .withIndex("by_community_and_user", (q) =>
+          q
+            .eq("communityId", args.communityId!)
+            .eq("userId", viewerId),
+        )
+        .unique();
+      if (!membership) {
+        throw new Error(
+          "You must be a community member to post an event there",
+        );
+      }
+    }
     const id = await ctx.db.insert("events", {
       createdBy: viewerId,
       name,
@@ -125,6 +144,7 @@ export const createEvent = mutation({
       locationLng: args.locationLng,
       visibility: args.visibility,
       coverImageUrl: args.coverImageUrl,
+      communityId: args.communityId,
       status: "scheduled",
       createdAt: Date.now(),
     });
@@ -327,6 +347,41 @@ export const listMyEvents = query({
       (a, b) => a.startsAt - b.startsAt,
     );
     return all.map((event) => ({
+      event,
+      isMine: event.createdBy === viewerId,
+    }));
+  },
+});
+
+// Every event attached to a community, sorted by `startsAt`. Member-only
+// — non-members never see the events tab. Uses the
+// `by_community_and_startsAt` index so pagination by start time is
+// cheap.
+export const listEventsForCommunity = query({
+  args: {
+    devUserId: v.optional(v.id("users")),
+    communityId: v.id("communities"),
+  },
+  handler: async (ctx, args) => {
+    const viewerId = await resolveViewerId(ctx, {
+      devUserId: args.devUserId,
+    });
+    const membership = await ctx.db
+      .query("communityMembers")
+      .withIndex("by_community_and_user", (q) =>
+        q.eq("communityId", args.communityId).eq("userId", viewerId),
+      )
+      .unique();
+    if (!membership) throw new Error("Not a community member");
+
+    const rows = await ctx.db
+      .query("events")
+      .withIndex("by_community_and_startsAt", (q) =>
+        q.eq("communityId", args.communityId),
+      )
+      .order("asc")
+      .take(200);
+    return rows.map((event) => ({
       event,
       isMine: event.createdBy === viewerId,
     }));

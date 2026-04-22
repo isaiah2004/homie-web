@@ -38,6 +38,7 @@ import {
   ChartBar,
   Folder,
   Users,
+  UsersRoundIcon,
   User,
   Camera,
   CalendarDaysIcon,
@@ -78,6 +79,11 @@ const data = {
       title: "Events",
       url: "/dashboard/events",
       icon: <CalendarDaysIcon />,
+    },
+    {
+      title: "Communities",
+      url: "/dashboard/communities",
+      icon: <UsersRoundIcon />,
     },
     {
       title: "Businesses",

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Controller, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -74,6 +74,12 @@ function datetimeLocalToEpoch(s: string): number {
 export default function Page() {
   const activeUser = useActiveUser()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  // Community-scoped create. `?communityId=` is passed from the
+  // community detail page "Create event" button. The id is forwarded
+  // to the mutation; the server re-checks membership before insert.
+  const communityId =
+    (searchParams.get("communityId") as Id<"communities"> | null) ?? null
 
   const createEvent = useIdentifiedMutation(api.events.createEvent)
   const parseMapsLink = useIdentifiedAction(
@@ -126,6 +132,7 @@ export default function Page() {
         locationMapsLink: values.locationMapsLink || undefined,
         visibility: values.visibility,
         coverImageUrl: values.coverImageUrl || undefined,
+        ...(communityId ? { communityId } : {}),
       })
       toast.success("Event created")
       router.push(`/dashboard/events/${id}`)

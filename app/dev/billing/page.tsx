@@ -13,11 +13,13 @@ import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 // The /dev/billing page is a dev-only admin panel for flipping `isPaid`
-// on businesses. It's the stopgap until the real payments webhook lands
-// in a later PR. Accessible only in dev mode — we gate server-side AND
-// render a banner client-side so the page doesn't blank in prod either.
+// on businesses and communities. It's the stopgap until the real
+// payments webhook lands in a later PR. Accessible only in dev mode —
+// we gate server-side AND render a banner client-side so the page
+// doesn't blank in prod either.
 
 export default function Page() {
   const activeUser = useActiveUser()
@@ -31,6 +33,10 @@ export default function Page() {
 
   const businesses = useQuery(
     api.businesses.listAllForDev,
+    skip ? "skip" : identityArg,
+  )
+  const communities = useQuery(
+    api.communities.listAllForDev,
     skip ? "skip" : identityArg,
   )
 
@@ -66,7 +72,7 @@ export default function Page() {
     )
   }
 
-  async function handleToggle(
+  async function handleToggleBusiness(
     businessId: string,
     currentPaid: boolean,
     name: string,
@@ -75,6 +81,25 @@ export default function Page() {
       await devMarkPaid({
         kind: "business",
         id: businessId,
+        paid: !currentPaid,
+      })
+      toast.success(
+        `${name} marked ${!currentPaid ? "paid" : "unpaid"}`,
+      )
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed")
+    }
+  }
+
+  async function handleToggleCommunity(
+    communityId: string,
+    currentPaid: boolean,
+    name: string,
+  ) {
+    try {
+      await devMarkPaid({
+        kind: "community",
+        id: communityId,
         paid: !currentPaid,
       })
       toast.success(
@@ -95,63 +120,136 @@ export default function Page() {
               <AlertTriangleIcon className="size-4 shrink-0" />
               <span>
                 <span className="font-semibold">Dev only.</span> This page
-                flips the <code className="rounded bg-amber-500/20 px-1">isPaid</code>{" "}
+                flips the{" "}
+                <code className="rounded bg-amber-500/20 px-1">isPaid</code>{" "}
                 flag locally to exercise paid-feature gates. In production
                 the flag is updated by the payments webhook.
               </span>
             </p>
           </div>
 
-          <h2 className="mt-4 text-lg font-semibold">All businesses</h2>
+          <Tabs defaultValue="businesses" className="mt-4">
+            <TabsList>
+              <TabsTrigger value="businesses">Businesses</TabsTrigger>
+              <TabsTrigger value="communities">Communities</TabsTrigger>
+            </TabsList>
 
-          <div className="mt-2 rounded-lg border bg-card">
-            {businesses === undefined ? (
-              <p className="p-6 text-center text-sm text-muted-foreground">
-                Loading…
-              </p>
-            ) : businesses.length === 0 ? (
-              <p className="p-6 text-center text-sm text-muted-foreground">
-                No businesses yet. Use the floating DEV switcher to seed
-                data, then create one from the Businesses page.
-              </p>
-            ) : (
-              <ul className="divide-y">
-                {businesses.map((b) => (
-                  <li
-                    key={b._id}
-                    className="flex items-center gap-3 p-4"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{b.name}</p>
-                      <div className="mt-0.5 flex items-center gap-1.5">
-                        <Badge variant="outline" className="text-[10px]">
-                          {b.category}
-                        </Badge>
-                        <Badge
-                          variant={b.isPaid ? "default" : "outline"}
-                          className="text-[10px]"
+            <TabsContent value="businesses" className="mt-4">
+              <div className="rounded-lg border bg-card">
+                {businesses === undefined ? (
+                  <p className="p-6 text-center text-sm text-muted-foreground">
+                    Loading…
+                  </p>
+                ) : businesses.length === 0 ? (
+                  <p className="p-6 text-center text-sm text-muted-foreground">
+                    No businesses yet. Use the floating DEV switcher to
+                    seed data, then create one from the Businesses page.
+                  </p>
+                ) : (
+                  <ul className="divide-y">
+                    {businesses.map((b) => (
+                      <li
+                        key={b._id}
+                        className="flex items-center gap-3 p-4"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">
+                            {b.name}
+                          </p>
+                          <div className="mt-0.5 flex items-center gap-1.5">
+                            <Badge variant="outline" className="text-[10px]">
+                              {b.category}
+                            </Badge>
+                            <Badge
+                              variant={b.isPaid ? "default" : "outline"}
+                              className="text-[10px]"
+                            >
+                              {b.isPaid ? "Paid" : "Unpaid"}
+                            </Badge>
+                            {b.verified && (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px]"
+                              >
+                                Verified
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant={b.isPaid ? "outline" : "default"}
+                          onClick={() =>
+                            handleToggleBusiness(b._id, b.isPaid, b.name)
+                          }
                         >
-                          {b.isPaid ? "Paid" : "Unpaid"}
-                        </Badge>
-                        {b.verified && (
-                          <Badge variant="secondary" className="text-[10px]">
-                            Verified
-                          </Badge>
-                        )}
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant={b.isPaid ? "outline" : "default"}
-                      onClick={() => handleToggle(b._id, b.isPaid, b.name)}
-                    >
-                      {b.isPaid ? "Mark unpaid" : "Mark paid"}
-                    </Button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+                          {b.isPaid ? "Mark unpaid" : "Mark paid"}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="communities" className="mt-4">
+              <div className="rounded-lg border bg-card">
+                {communities === undefined ? (
+                  <p className="p-6 text-center text-sm text-muted-foreground">
+                    Loading…
+                  </p>
+                ) : communities.length === 0 ? (
+                  <p className="p-6 text-center text-sm text-muted-foreground">
+                    No communities yet. Create one from the Communities
+                    page.
+                  </p>
+                ) : (
+                  <ul className="divide-y">
+                    {communities.map((c) => (
+                      <li
+                        key={c._id}
+                        className="flex items-center gap-3 p-4"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">
+                            {c.name}
+                          </p>
+                          <div className="mt-0.5 flex items-center gap-1.5">
+                            <Badge variant="outline" className="text-[10px]">
+                              {c.category}
+                            </Badge>
+                            <Badge
+                              variant={c.isPaid ? "default" : "outline"}
+                              className="text-[10px]"
+                            >
+                              {c.isPaid ? "Paid" : "Unpaid"}
+                            </Badge>
+                            {!c.isPublic && (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px]"
+                              >
+                                Private
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant={c.isPaid ? "outline" : "default"}
+                          onClick={() =>
+                            handleToggleCommunity(c._id, c.isPaid, c.name)
+                          }
+                        >
+                          {c.isPaid ? "Mark unpaid" : "Mark paid"}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </TabsContent>
+          </Tabs>
         </div>
       </div>
     </div>

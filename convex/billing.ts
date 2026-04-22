@@ -7,8 +7,7 @@ import { resolveIdentity } from "./lib/identity"
 // this flag will be flipped by our payments webhook; until then we let a
 // dev-mode admin flip it from `/dev/billing` to exercise paid-feature gates.
 //
-// Only `kind: "business"` is wired for this PR. `kind: "community"` is
-// validated but rejected — communities schema lands in PR #6.
+// PR #6 wires `kind: "community"` alongside the existing business branch.
 export const devMarkPaid = mutation({
   args: {
     devUserId: v.optional(v.id("users")),
@@ -27,7 +26,11 @@ export const devMarkPaid = mutation({
     }
 
     if (args.kind === "community") {
-      throw new Error("Communities land in PR #6 — not supported yet")
+      const communityId = args.id as Id<"communities">
+      const community = await ctx.db.get(communityId)
+      if (!community) throw new Error("Community not found")
+      await ctx.db.patch(communityId, { isPaid: args.paid })
+      return
     }
 
     const businessId = args.id as Id<"businesses">
