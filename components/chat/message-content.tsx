@@ -8,6 +8,8 @@ import { FileIcon, FileTextIcon } from "lucide-react"
 
 import { sanitizeMessageHtml } from "@/lib/sanitize-html"
 import { cn } from "@/lib/utils"
+import { EventCard } from "@/components/event-card"
+import { Id } from "@/convex/_generated/dataModel"
 import {
   Dialog,
   DialogContent,
@@ -15,6 +17,11 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+
+// homie://event/{id} — inline event reference that expands to an <EventCard>
+// below the message bubble. `id` captures Convex document id characters
+// (alphanumeric, underscore, or hyphen) until a non-id character.
+const HOMIE_EVENT_REGEX = /homie:\/\/event\/([a-zA-Z0-9_-]+)/g
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Embeds (YouTube / Spotify — unchanged from the previous component)
@@ -325,6 +332,49 @@ export type MessageContentProps = {
   attachments?: RenderableAttachment[]
 }
 
+// Collect all homie://event/{id} ids appearing in a string. Used to render
+// inline EventCards under the bubble and to rewrite plain-text bodies into
+// clickable links.
+function collectEventRefs(content: string): Id<"events">[] {
+  const out: Id<"events">[] = []
+  const seen = new Set<string>()
+  const re = new RegExp(HOMIE_EVENT_REGEX.source, "g")
+  let m: RegExpExecArray | null
+  while ((m = re.exec(content)) !== null) {
+    if (seen.has(m[1])) continue
+    seen.add(m[1])
+    out.push(m[1] as Id<"events">)
+  }
+  return out
+}
+
+// Render a plain-text body replacing every `homie://event/{id}` occurrence
+// with a clickable anchor that routes to the event page. Anything else is
+// rendered as-is. Used for `format === "plain"` so the text "meet here:
+// homie://event/xyz" still reads cleanly.
+function renderPlainWithEventLinks(content: string): React.ReactNode {
+  const parts: React.ReactNode[] = []
+  let last = 0
+  const re = new RegExp(HOMIE_EVENT_REGEX.source, "g")
+  let m: RegExpExecArray | null
+  let i = 0
+  while ((m = re.exec(content)) !== null) {
+    if (m.index > last) parts.push(content.slice(last, m.index))
+    parts.push(
+      <a
+        key={`ev-${i++}`}
+        href={`/dashboard/events/${m[1]}`}
+        className="underline underline-offset-2 break-all hover:opacity-80"
+      >
+        homie://event/{m[1]}
+      </a>,
+    )
+    last = m.index + m[0].length
+  }
+  if (last < content.length) parts.push(content.slice(last))
+  return parts.length > 0 ? parts : content
+}
+
 export function MessageContent({
   content,
   format,
@@ -339,6 +389,7 @@ export function MessageContent({
         .filter((n): n is React.ReactElement => n !== null),
     [urls],
   )
+  const eventRefs = React.useMemo(() => collectEventRefs(content), [content])
 
   const markdownComponents = React.useMemo(
     () => buildMarkdownComponents(isUser),
@@ -355,12 +406,23 @@ export function MessageContent({
         dangerouslySetInnerHTML={{ __html: clean }}
       />
     )
+  } else if (format === "plain") {
+    // Plain bodies skip the markdown pass so `homie://event/{id}` isn't
+    // accidentally eaten by autolink rules. Render with the custom anchor
+    // helper instead.
+    body = <p className="mb-1 last:mb-0">{renderPlainWithEventLinks(content)}</p>
   } else {
-    // `format === "markdown"`, `"plain"`, or undefined — all rendered
-    // through react-markdown (plain text passes through markdown fine).
+    // `format === "markdown"` or undefined — route homie:// references
+    // through markdown too. `react-markdown` won't autolink the custom
+    // scheme, but we preprocess to swap each ref for a real [text](url)
+    // link so the rendered anchor points to the app route.
+    const preprocessed = content.replace(
+      HOMIE_EVENT_REGEX,
+      (_m, id) => `[homie://event/${id}](/dashboard/events/${id})`,
+    )
     body = (
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {content}
+        {preprocessed}
       </ReactMarkdown>
     )
   }
@@ -369,6 +431,13 @@ export function MessageContent({
     <div className="text-sm [&>*:first-child]:mt-0">
       {body}
       {embeds.length > 0 && <div className="space-y-2">{embeds}</div>}
+      {eventRefs.length > 0 && (
+        <div className="mt-2 space-y-2">
+          {eventRefs.map((id) => (
+            <EventCard key={id} eventId={id} />
+          ))}
+        </div>
+      )}
       {attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />
       )}
