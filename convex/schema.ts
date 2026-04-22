@@ -65,7 +65,17 @@ export const users = defineTable({
     value: v.string(),
     visibility: visibilityEnum,
   }))),
-  
+
+  eventInterests: v.optional(
+    v.array(
+      v.object({
+        value: v.string(),
+        custom: v.boolean(),
+        visibility: visibilityEnum,
+      })
+    )
+  ),
+
   media: v.optional(v.array(v.object({
     title: v.string(),
     type: v.union(
