@@ -4,8 +4,10 @@ import * as React from "react"
 import { useEditor, EditorContent } from "@tiptap/react"
 import StarterKit from "@tiptap/starter-kit"
 import Placeholder from "@tiptap/extension-placeholder"
-import Link from "@tiptap/extension-link"
-import { useAction, useMutation } from "convex/react"
+import {
+  useIdentifiedAction,
+  useIdentifiedMutation,
+} from "@/hooks/use-identified"
 import { toast } from "sonner"
 import {
   BoldIcon,
@@ -114,14 +116,17 @@ function readImageDimensions(
 }
 
 // XHR-based PUT so we can surface progress. fetch() doesn't expose an
-// upload progress stream in browsers.
+// upload progress stream in browsers. Returns a handle with `.abort()`
+// so the caller can cancel the transfer on unmount.
+type UploadHandle = { promise: Promise<void>; abort: () => void }
+
 function putWithProgress(
   url: string,
   file: File,
   onProgress: (pct: number) => void,
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
+): UploadHandle {
+  const xhr = new XMLHttpRequest()
+  const promise = new Promise<void>((resolve, reject) => {
     xhr.open("PUT", url)
     xhr.setRequestHeader("Content-Type", file.type)
     xhr.upload.addEventListener("progress", (ev) => {
@@ -134,8 +139,10 @@ function putWithProgress(
       else reject(new Error(`Upload failed (${xhr.status})`))
     }
     xhr.onerror = () => reject(new Error("Upload network error"))
+    xhr.onabort = () => reject(new Error("Upload aborted"))
     xhr.send(file)
   })
+  return { promise, abort: () => xhr.abort() }
 }
 
 export function RichTextComposer({
@@ -147,13 +154,13 @@ export function RichTextComposer({
   onMentionChange,
   onTabKey,
 }: RichTextComposerProps) {
-  // NOTE: the task spec's `useIdentifiedAction` wrappers auto-inject
-  // `devUserId` but our Convex signatures here take `userId` directly
-  // (pre-authorized at the client since composer-level uploads don't
-  // need server-side dev-mode bootstrapping — viewerId is already the
-  // resolved user id). So we call `useAction` / `useMutation` directly.
-  const generateUploadUrl = useAction(api.r2.generateUploadUrl)
-  const finalizeUpload = useMutation(api.attachments.finalizeUpload)
+  // R2 upload endpoints are now authenticated via `resolveIdentity` —
+  // we let useIdentified* auto-inject `devUserId` from the active user.
+  // That means the server, not the client, decides what user is
+  // uploading. `viewerId` is still used for UI affordances (chip
+  // grouping etc.) but is no longer trusted as an owner identifier.
+  const generateUploadUrl = useIdentifiedAction(api.r2.generateUploadUrl)
+  const finalizeUpload = useIdentifiedMutation(api.attachments.finalizeUpload)
 
   const [pending, setPending] = React.useState<PendingAttachment[]>([])
   const pendingRef = React.useRef<PendingAttachment[]>([])
@@ -162,17 +169,25 @@ export function RichTextComposer({
   const [mentionsHomie, setMentionsHomie] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
 
+  // Track in-flight XHRs so we can abort them on unmount / error. Also
+  // track blob URLs to revoke on unmount + send so we don't leak them.
+  const activeUploadsRef = React.useRef<Map<string, UploadHandle>>(new Map())
+
   const editor = useEditor({
     extensions: [
+      // StarterKit v3 already bundles the Link extension; configure it
+      // through the `link` key rather than importing Link separately,
+      // otherwise we end up registering two Link extensions and our
+      // HTMLAttributes overrides can be silently dropped.
       StarterKit.configure({
         heading: false,
         codeBlock: false,
         horizontalRule: false,
-      }),
-      Link.configure({
-        openOnClick: false,
-        autolink: true,
-        HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" },
+        link: {
+          openOnClick: false,
+          autolink: true,
+          HTMLAttributes: { rel: "noopener noreferrer", target: "_blank" },
+        },
       }),
       Placeholder.configure({ placeholder }),
     ],
@@ -205,10 +220,18 @@ export function RichTextComposer({
     immediatelyRender: false,
   })
 
-  // Ensure we don't leak the editor instance between mounts.
+  // Ensure we don't leak the editor instance, in-flight XHRs, or object
+  // URLs between mounts.
   React.useEffect(() => {
     return () => {
       editor?.destroy()
+      for (const handle of activeUploadsRef.current.values()) {
+        handle.abort()
+      }
+      activeUploadsRef.current.clear()
+      for (const item of pendingRef.current) {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -237,6 +260,11 @@ export function RichTextComposer({
         mentionsHomie: HOMIE_MENTION.test(plainText),
       })
       editor.commands.clearContent()
+      // Revoke every blob URL from the just-sent attachments so we don't
+      // leak them over the lifetime of the page.
+      for (const item of pendingRef.current) {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+      }
       setPending([])
       onMentionChange?.(false)
       setMentionsHomie(false)
@@ -279,22 +307,26 @@ export function RichTextComposer({
           }
 
           const { uploadUrl, key } = await generateUploadUrl({
-            userId: viewerId,
             fileName: file.name,
             contentType: file.type,
             size: file.size,
           })
 
-          await putWithProgress(uploadUrl, file, (pct) => {
+          const handle = putWithProgress(uploadUrl, file, (pct) => {
             setPending((prev) =>
               prev.map((p) =>
                 p.localId === localId ? { ...p, progress: pct } : p,
               ),
             )
           })
+          activeUploadsRef.current.set(localId, handle)
+          try {
+            await handle.promise
+          } finally {
+            activeUploadsRef.current.delete(localId)
+          }
 
           const attachmentId = await finalizeUpload({
-            userId: viewerId,
             key,
             fileName: file.name,
             contentType: file.type,
@@ -331,6 +363,12 @@ export function RichTextComposer({
   }
 
   function removePending(localId: string) {
+    // Abort any in-flight XHR for this attachment; revoke the blob URL.
+    const handle = activeUploadsRef.current.get(localId)
+    if (handle) {
+      handle.abort()
+      activeUploadsRef.current.delete(localId)
+    }
     setPending((prev) => {
       const item = prev.find((p) => p.localId === localId)
       if (item?.previewUrl) URL.revokeObjectURL(item.previewUrl)

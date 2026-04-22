@@ -15,8 +15,7 @@ function r2Endpoint(): string {
   if (!accountId) {
     throw new Error(
       "R2 not configured: set R2_ACCOUNT_ID (or R2_JURISDICTION_SPECIFIC_URL) " +
-        "on the Convex deployment. See A:\\Work\\homie\\homie-web\\.env.local and " +
-        "npx convex env set R2_ACCOUNT_ID <value>.",
+        "on the Convex deployment via: npx convex env set R2_ACCOUNT_ID <value>",
     )
   }
   return `https://${accountId}.r2.cloudflarestorage.com`
