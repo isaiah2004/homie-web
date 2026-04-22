@@ -8,7 +8,6 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
-import { sanitizeMessageHtml } from "../lib/sanitize-html";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -220,12 +219,18 @@ export const sendMessage = mutation({
   ) => {
     await requireFriendship(ctx, from, to);
 
-    // Normalize content. HTML composes sanitize server-side before insert.
+    // Normalize content. Server-side DOMPurify sanitize is NOT run here —
+    // isomorphic-dompurify fails to init inside the Convex V8 isolate
+    // (needs either Node's jsdom or the browser DOM). We rely on:
+    //   1. Tiptap's vocabulary is already constrained (no raw HTML input),
+    //   2. `components/chat/message-content.tsx` sanitizes every HTML
+    //      payload with DOMPurify right before `dangerouslySetInnerHTML`.
+    // Defense-in-depth will be restored when we either (a) port sanitize
+    // to a "use node" action that wraps `sendMessage`, or (b) ship a
+    // pure-JS sanitizer compatible with the V8 runtime.
     const rawContent = content ?? "";
     const normalizedContent =
-      format === "html"
-        ? sanitizeMessageHtml(rawContent)
-        : rawContent.trim();
+      format === "html" ? rawContent : rawContent.trim();
 
     // Require at least one of: non-empty content OR at least one attachment.
     // For HTML format we check the stripped text length so that bare

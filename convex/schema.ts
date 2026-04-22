@@ -356,6 +356,104 @@ export const spotifyAuth = defineTable({
   expiresAt: v.number(),
 });
 
+// Cross-cutting notifications table. Shared by events (PR #4), communities
+// (PR #6), businesses (PR #7), and ads (PR #8). The `type` union enumerates
+// every notification kind up-front so no future schema migration is needed
+// when later PRs start emitting their own rows.
+//
+// `meta` is a freeform record for PR-specific fields (e.g. eventId, inviteId)
+// that the link target / UI may want without widening the schema.
+export const notifications = defineTable({
+  userId: v.id("users"),
+  type: v.union(
+    v.literal("event_invite"),
+    v.literal("event_accepted"),
+    v.literal("event_declined"),
+    v.literal("event_cancelled"),
+    v.literal("event_updated"),
+    // Placeholders for PRs #5/#6/#7/#8 — declared now so future features
+    // don't need a schema migration. Unused today but valid.
+    v.literal("community_join_request"),
+    v.literal("community_request_accepted"),
+    v.literal("community_request_declined"),
+    v.literal("community_announcement"),
+    v.literal("community_role_changed"),
+    v.literal("community_removed"),
+    v.literal("business_member_invite"),
+    v.literal("business_role_changed"),
+    v.literal("ad_approved"),
+    v.literal("ad_rejected"),
+  ),
+  title: v.string(),
+  body: v.optional(v.string()),
+  link: v.optional(v.string()),
+  read: v.boolean(),
+  createdAt: v.number(),
+  meta: v.optional(v.record(v.string(), v.any())),
+})
+  .index("by_user_and_createdAt", ["userId", "createdAt"])
+  .index("by_user_and_read", ["userId", "read"]);
+
+// Events table. `visibility` gates `getEventForViewer`:
+//   - "public"   — any authenticated user may read
+//   - "friends"  — only accepted friends of creator (or creator themselves)
+//   - "invitees" — only rows present in `eventInvites` for this event (or creator)
+//
+// `groupChatRef` is a loose string reference (not v.id("groupChats")) because
+// group chats don't exist yet — will be introduced in PR #3. Keeping the
+// column here avoids a follow-up schema migration when that PR ships.
+export const events = defineTable({
+  createdBy: v.id("users"),
+  name: v.string(),
+  description: v.optional(v.string()),
+  startsAt: v.number(),
+  endsAt: v.optional(v.number()),
+  locationName: v.optional(v.string()),
+  locationAddress: v.optional(v.string()),
+  locationMapsLink: v.optional(v.string()),
+  locationLat: v.optional(v.number()),
+  locationLng: v.optional(v.number()),
+  visibility: v.union(
+    v.literal("public"),
+    v.literal("friends"),
+    v.literal("invitees"),
+  ),
+  coverImageUrl: v.optional(v.string()),
+  // Group-chat click-through target. See comment above for why this is a
+  // string today.
+  groupChatRef: v.optional(v.string()),
+  status: v.union(
+    v.literal("scheduled"),
+    v.literal("cancelled"),
+    v.literal("completed"),
+  ),
+  createdAt: v.number(),
+})
+  .index("by_creator", ["createdBy"])
+  .index("by_startsAt", ["startsAt"])
+  .index("by_status_and_startsAt", ["status", "startsAt"]);
+
+// Event invites. One row per (event, invitee). Status drives the RSVP UI;
+// `respondedAt` is null while `status === "pending"`. Creator-side access
+// through `by_event`; invitee-side through `by_invitee` / `by_invitee_and_status`.
+export const eventInvites = defineTable({
+  eventId: v.id("events"),
+  inviterId: v.id("users"),
+  inviteeId: v.id("users"),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("accepted"),
+    v.literal("declined"),
+    v.literal("maybe"),
+  ),
+  respondedAt: v.optional(v.number()),
+  createdAt: v.number(),
+})
+  .index("by_event", ["eventId"])
+  .index("by_invitee", ["inviteeId"])
+  .index("by_invitee_and_status", ["inviteeId", "status"])
+  .index("by_event_and_invitee", ["eventId", "inviteeId"]);
+
 export default defineSchema({
   users,
   friends,
@@ -368,4 +466,7 @@ export default defineSchema({
   conversationMessages,
   vapiCalls,
   spotifyAuth,
+  notifications,
+  events,
+  eventInvites,
 });

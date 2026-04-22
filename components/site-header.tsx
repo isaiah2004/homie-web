@@ -2,6 +2,7 @@
 import { ThemeToggle } from "@/components/ui/theme-switcher"
 import { Separator } from "@/components/ui/separator"
 import { SidebarTrigger } from "@/components/ui/sidebar"
+import { NotificationBell } from "@/components/notification-bell"
 
 export function SiteHeader({ pageName }: { pageName: string }) {
   return (
@@ -11,7 +12,8 @@ export function SiteHeader({ pageName }: { pageName: string }) {
         <Separator orientation="vertical" className="mr-2" />
         <h1 className="text-base font-medium">{pageName}</h1>
       </div>
-      <div className="pr-2">
+      <div className="flex items-center gap-1 pr-2">
+        <NotificationBell />
         <ThemeToggle />
       </div>
     </header>

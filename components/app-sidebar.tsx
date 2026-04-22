@@ -39,6 +39,7 @@ import {
   Users,
   User,
   Camera,
+  CalendarDaysIcon,
   FileText,
   Settings2,
   CircleHelp,
@@ -47,6 +48,7 @@ import {
   FileChartColumn,
   File,
   BellDot,
+  BellIcon,
   Smile,
   Bell,
   LogOut,
@@ -72,15 +74,20 @@ const data = {
       icon: <MessageSquare />,
     },
     {
+      title: "Events",
+      url: "/dashboard/events",
+      icon: <CalendarDaysIcon />,
+    },
+    {
       title: "Profile",
       url: "/dashboard/profile",
       icon: <User />,
     },
-    // {
-    //   title: "Notifications",
-    //   url: "/dashboard/notifications",
-    //   icon: <BellDot />,
-    // },
+    {
+      title: "Notifications",
+      url: "/dashboard/notifications",
+      icon: <BellIcon />,
+    },
   ],
   navClouds: [
     {
