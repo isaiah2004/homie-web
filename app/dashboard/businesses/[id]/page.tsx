@@ -72,6 +72,20 @@ export default function Page() {
       : { businessId, ...identityArg },
   )
 
+  // The analytics summary is manager+ gated. `listMembers` confirms we're
+  // a member; role check below decides whether to surface the stat.
+  const canViewAnalytics =
+    viewerData !== undefined &&
+    viewerData !== null &&
+    viewerData.myRole !== null &&
+    viewerData.myRole !== "employee"
+  const analyticsSummary = useQuery(
+    api.adMetrics.getBusinessAnalyticsSummary,
+    skip || !canViewAnalytics
+      ? "skip"
+      : { businessId, days: 7, ...identityArg },
+  )
+
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
       <div>
@@ -229,8 +243,18 @@ export default function Page() {
                     <StatCard
                       icon={<BarChart3Icon className="size-4" />}
                       label="7-day impressions"
-                      value={"—"}
-                      hint="Wired in PR #8"
+                      value={
+                        canViewAnalytics
+                          ? analyticsSummary === undefined
+                            ? "…"
+                            : analyticsSummary.totalImpressions.toLocaleString()
+                          : "—"
+                      }
+                      hint={
+                        canViewAnalytics
+                          ? undefined
+                          : "Manager+ required"
+                      }
                     />
                   </div>
 
