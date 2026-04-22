@@ -121,6 +121,9 @@ export const getUserForViewer = query({
     const interests = (target.interests ?? []).filter((i) =>
       canSee(rel, i.visibility),
     );
+    const eventInterests = (target.eventInterests ?? []).filter((i) =>
+      canSee(rel, i.visibility),
+    );
     const media = (target.media ?? []).filter((i) =>
       canSee(rel, i.visibility),
     );
@@ -152,6 +155,7 @@ export const getUserForViewer = query({
       visibility: target.visibility,
       currentStatus: target.currentStatus,
       interests,
+      eventInterests,
       media,
       places,
       projects,
@@ -207,6 +211,11 @@ export const createUser = mutation({
     currentStatus: v.optional(v.array(v.union(v.literal("work"), v.literal("study")))),
     interests: v.optional(v.array(v.object({
       value: v.string(),
+      visibility: v.union(v.literal("close"), v.literal("friends"), v.literal("mutual"), v.literal("none")),
+    }))),
+    eventInterests: v.optional(v.array(v.object({
+      value: v.string(),
+      custom: v.boolean(),
       visibility: v.union(v.literal("close"), v.literal("friends"), v.literal("mutual"), v.literal("none")),
     }))),
     media: v.optional(v.array(v.object({
@@ -265,6 +274,11 @@ export const updateUser = mutation({
       currentStatus: v.optional(v.array(v.union(v.literal("work"), v.literal("study")))),
       interests: v.optional(v.array(v.object({
         value: v.string(),
+        visibility: v.union(v.literal("close"), v.literal("friends"), v.literal("mutual"), v.literal("none")),
+      }))),
+      eventInterests: v.optional(v.array(v.object({
+        value: v.string(),
+        custom: v.boolean(),
         visibility: v.union(v.literal("close"), v.literal("friends"), v.literal("mutual"), v.literal("none")),
       }))),
       media: v.optional(v.array(v.object({
@@ -404,6 +418,11 @@ export const updateProfile = mutation({
       currentStatus: v.optional(v.array(v.union(v.literal("work"), v.literal("study")))),
       interests: v.optional(v.array(v.object({
         value: v.string(),
+        visibility: v.union(v.literal("close"), v.literal("friends"), v.literal("mutual"), v.literal("none")),
+      }))),
+      eventInterests: v.optional(v.array(v.object({
+        value: v.string(),
+        custom: v.boolean(),
         visibility: v.union(v.literal("close"), v.literal("friends"), v.literal("mutual"), v.literal("none")),
       }))),
       media: v.optional(v.array(v.object({

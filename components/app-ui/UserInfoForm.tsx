@@ -7,11 +7,16 @@ import { toast } from "sonner"
 import * as z from "zod"
 import {
   BriefcaseIcon,
+  CalendarHeartIcon,
   GraduationCapIcon,
   InfoIcon,
   LinkIcon,
   Loader2Icon,
+  MapPinIcon,
+  MusicIcon,
   PlusIcon,
+  SparklesIcon,
+  UserIcon,
   XIcon,
 } from "lucide-react"
 import { useMutation, useQuery } from "convex/react"
@@ -29,7 +34,6 @@ import {
 } from "@/components/ui/accordion"
 import {
   Field,
-  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
@@ -49,13 +53,8 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
-import { SpotifyPicker } from "@/components/app-ui/SpotifyPicker"
-import { ItunesPicker } from "@/components/app-ui/ItunesPicker"
-import { TvMazePicker } from "@/components/app-ui/TvMazePicker"
-import { OpenLibraryPicker } from "@/components/app-ui/OpenLibraryPicker"
-import { JikanPicker } from "@/components/app-ui/JikanPicker"
-import { CheapSharkPicker } from "@/components/app-ui/CheapSharkPicker"
 import {
   Dialog,
   DialogContent,
@@ -65,6 +64,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { FieldInfo } from "@/components/app-ui/FieldInfo"
+import {
+  EventInterestsField,
+} from "@/components/app-ui/EventInterestsField"
+import { MediaCard } from "@/components/app-ui/MediaCard"
+import { cn } from "@/lib/utils"
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
 
@@ -73,6 +78,12 @@ const sensitiveVisibilityEnum = z.enum(["close", "none"])
 
 const interestSchema = z.object({
   value: z.string().min(1, "Interest is required."),
+  visibility: visibilityEnum,
+})
+
+const eventInterestSchema = z.object({
+  value: z.string().min(1, "Event type required."),
+  custom: z.boolean(),
   visibility: visibilityEnum,
 })
 
@@ -163,6 +174,7 @@ const formSchema = z.object({
   workplace: workplaceSchema,
   school: schoolSchema,
   interests: z.array(interestSchema),
+  eventInterests: z.array(eventInterestSchema).default([]),
   media: z.array(mediaSchema),
   places: z.array(placeSchema),
   projects: z.array(projectSchema),
@@ -419,12 +431,20 @@ function AddFromGoogleMapsDialog({
 function SectionCard({
   children,
   className,
+  id,
 }: {
   children: React.ReactNode
   className?: string
+  id?: string
 }) {
   return (
-    <div className={`relative overflow-hidden rounded-xl border bg-muted/60 p-6 shadow-sm transition-all hover:shadow-md dark:bg-background/60 ${className ?? ""}`}>
+    <div
+      id={id}
+      className={cn(
+        "relative overflow-hidden rounded-xl border bg-muted/60 p-6 shadow-sm transition-all hover:shadow-md dark:bg-background/60 scroll-mt-24",
+        className,
+      )}
+    >
       <div className="pointer-events-none absolute inset-0 bg-foreground/[0.04]" />
       <div className="absolute inset-0 opacity-5 mix-blend-overlay">
         <div className="w-full h-full bg-repeat bg-center" style={{ backgroundImage: 'url(/images/textures/davidzydd-mesh-2697072_1920.png)', backgroundSize: '300px 300px' }} />
@@ -462,288 +482,29 @@ function TexturedCard({
   )
 }
 
-// ── Media row ────────────────────────────────────────────────────────────────
-//
-// Music/podcast rows use the Spotify picker so users attach a real provider
-// id + artwork. Other types stay free-text until their own provider lands.
+// ── Media tab configuration ──────────────────────────────────────────────────
 
 type MediaType = z.infer<typeof mediaSchema>["type"]
-type MusicScope = "track" | "album" | "artist"
 
-const MUSIC_SCOPE_LABELS: Record<MusicScope, string> = {
-  track: "Song",
-  album: "Album",
-  artist: "Artist",
-}
-
-type PickerValue = {
-  title?: string
-  subtitle?: string
-  imageUrl?: string
-}
-
-type ApplyPick = (pick: {
-  source: "spotify" | "itunes" | "tvmaze" | "openlibrary" | "jikan" | "cheapshark"
-  kind: string
+const MEDIA_TABS: Array<{
   id: string
-  title: string
-  subtitle?: string
-  imageUrl?: string
-}) => void
-
-function renderPickerFor(
-  type: MediaType,
-  musicScope: MusicScope,
-  value: PickerValue,
-  onSelect: ApplyPick,
-  onClear: () => void,
-  index: number,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  form: any,
-): React.ReactNode {
-  if (type === "music") {
-    return (
-      <SpotifyPicker
-        kinds={[musicScope]}
-        value={value}
-        onSelect={onSelect}
-        onClear={onClear}
-        placeholder={`Search for a ${MUSIC_SCOPE_LABELS[musicScope].toLowerCase()}…`}
-      />
-    )
-  }
-  if (type === "podcast") {
-    return (
-      <SpotifyPicker
-        kinds={["show"]}
-        value={value}
-        onSelect={onSelect}
-        onClear={onClear}
-        placeholder="Search podcasts on Spotify…"
-      />
-    )
-  }
-  if (type === "movie") {
-    return (
-      <ItunesPicker value={value} onSelect={onSelect} onClear={onClear} />
-    )
-  }
-  if (type === "series") {
-    return (
-      <TvMazePicker value={value} onSelect={onSelect} onClear={onClear} />
-    )
-  }
-  if (type === "book" || type === "novel") {
-    return (
-      <OpenLibraryPicker
-        value={value}
-        onSelect={onSelect}
-        onClear={onClear}
-      />
-    )
-  }
-  if (type === "anime") {
-    return (
-      <JikanPicker value={value} onSelect={onSelect} onClear={onClear} />
-    )
-  }
-  if (type === "game") {
-    return (
-      <CheapSharkPicker value={value} onSelect={onSelect} onClear={onClear} />
-    )
-  }
-  return (
-    <Controller
-      name={`media.${index}.title`}
-      control={form.control}
-      render={({ field, fieldState }) => (
-        <Field data-invalid={fieldState.invalid}>
-          <Input
-            {...field}
-            aria-invalid={fieldState.invalid}
-            placeholder="e.g. custom entry"
-            className="bg-background border-border"
-          />
-          {fieldState.invalid && <FieldError errors={[fieldState.error]} />}
-        </Field>
-      )}
-    />
-  )
-}
-
-function MediaRow({
-  index,
-  form,
-  onRemove,
-}: {
-  index: number
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  form: any
-  onRemove: () => void
-}) {
-  const type = useWatch({
-    control: form.control,
-    name: `media.${index}.type`,
-  }) as MediaType
-  const title = useWatch({
-    control: form.control,
-    name: `media.${index}.title`,
-  }) as string | undefined
-  const subtitle = useWatch({
-    control: form.control,
-    name: `media.${index}.subtitle`,
-  }) as string | undefined
-  const imageUrl = useWatch({
-    control: form.control,
-    name: `media.${index}.imageUrl`,
-  }) as string | undefined
-  const externalKind = useWatch({
-    control: form.control,
-    name: `media.${index}.externalKind`,
-  }) as string | undefined
-
-  const [musicScope, setMusicScope] = React.useState<MusicScope>(() => {
-    if (
-      externalKind === "track" ||
-      externalKind === "album" ||
-      externalKind === "artist"
-    ) {
-      return externalKind
-    }
-    return "track"
-  })
-
-  const applyPick = (pick: {
-    source: "spotify" | "itunes" | "tvmaze" | "openlibrary" | "jikan" | "cheapshark"
-    kind: string
-    id: string
-    title: string
-    subtitle?: string
-    imageUrl?: string
-  }) => {
-    form.setValue(`media.${index}.title`, pick.title, { shouldDirty: true })
-    form.setValue(`media.${index}.subtitle`, pick.subtitle, {
-      shouldDirty: true,
-    })
-    form.setValue(`media.${index}.imageUrl`, pick.imageUrl, {
-      shouldDirty: true,
-    })
-    form.setValue(`media.${index}.externalSource`, pick.source, {
-      shouldDirty: true,
-    })
-    form.setValue(`media.${index}.externalId`, pick.id, { shouldDirty: true })
-    form.setValue(`media.${index}.externalKind`, pick.kind, {
-      shouldDirty: true,
-    })
-  }
-
-  const clearPick = React.useCallback(() => {
-    form.setValue(`media.${index}.title`, "", { shouldDirty: true })
-    form.setValue(`media.${index}.subtitle`, undefined, { shouldDirty: true })
-    form.setValue(`media.${index}.imageUrl`, undefined, { shouldDirty: true })
-    form.setValue(`media.${index}.externalSource`, undefined, {
-      shouldDirty: true,
-    })
-    form.setValue(`media.${index}.externalId`, undefined, {
-      shouldDirty: true,
-    })
-    form.setValue(`media.${index}.externalKind`, undefined, {
-      shouldDirty: true,
-    })
-  }, [form, index])
-
-  // Changing media.type changes which provider the picker talks to (or swaps
-  // to free-text). Any previously-attached provider metadata becomes stale
-  // and could produce rows like `type: "other"` but `externalSource:
-  // "spotify"`. Clear the pick when the type changes (skip initial mount).
-  const prevTypeRef = React.useRef(type)
-  React.useEffect(() => {
-    if (prevTypeRef.current !== type) {
-      clearPick()
-      prevTypeRef.current = type
-    }
-  }, [type, clearPick])
-
-  return (
-    <TexturedCard>
-      <div className="flex flex-col gap-4 md:flex-row md:items-start">
-        <div className="flex flex-col gap-2 md:w-44 md:shrink-0">
-          <Controller
-            name={`media.${index}.type`}
-            control={form.control}
-            render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
-                <SelectTrigger className="w-full border-border bg-background hover:bg-muted/50 transition-colors">
-                  <SelectValue placeholder="Type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="music">Music</SelectItem>
-                  <SelectItem value="movie">Movie</SelectItem>
-                  <SelectItem value="book">Book</SelectItem>
-                  <SelectItem value="novel">Novel</SelectItem>
-                  <SelectItem value="series">Series</SelectItem>
-                  <SelectItem value="podcast">Podcast</SelectItem>
-                  <SelectItem value="anime">Anime</SelectItem>
-                  <SelectItem value="game">Game</SelectItem>
-                  <SelectItem value="other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            )}
-          />
-          <Controller
-            name={`media.${index}.visibility`}
-            control={form.control}
-            render={({ field }) => (
-              <VisibilitySelect
-                value={field.value}
-                onValueChange={field.onChange}
-              />
-            )}
-          />
-        </div>
-
-        <div className="min-w-0 flex-1 space-y-2">
-          {type === "music" && (
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              size="sm"
-              value={musicScope}
-              onValueChange={(v) => {
-                if (v === "track" || v === "album" || v === "artist") {
-                  setMusicScope(v)
-                }
-              }}
-            >
-              <ToggleGroupItem value="track">Song</ToggleGroupItem>
-              <ToggleGroupItem value="album">Album</ToggleGroupItem>
-              <ToggleGroupItem value="artist">Artist</ToggleGroupItem>
-            </ToggleGroup>
-          )}
-          {renderPickerFor(
-            type,
-            musicScope,
-            { title, subtitle, imageUrl },
-            applyPick,
-            clearPick,
-            index,
-            form,
-          )}
-        </div>
-
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={onRemove}
-          className="shrink-0 hover:bg-destructive/10 hover:text-destructive"
-        >
-          <XIcon className="size-4" />
-        </Button>
-      </div>
-    </TexturedCard>
-  )
-}
+  label: string
+  match: (type: MediaType) => boolean
+}> = [
+  { id: "all", label: "All", match: () => true },
+  { id: "music", label: "Music", match: (t) => t === "music" },
+  { id: "movie", label: "Movies", match: (t) => t === "movie" },
+  {
+    id: "book",
+    label: "Books",
+    match: (t) => t === "book" || t === "novel",
+  },
+  { id: "series", label: "Series", match: (t) => t === "series" },
+  { id: "podcast", label: "Podcasts", match: (t) => t === "podcast" },
+  { id: "anime", label: "Anime", match: (t) => t === "anime" },
+  { id: "game", label: "Games", match: (t) => t === "game" },
+  { id: "other", label: "Other", match: (t) => t === "other" },
+]
 
 // ── Main form ────────────────────────────────────────────────────────────────
 
@@ -766,6 +527,7 @@ export function UserInfoForm() {
       workplace: { name: "", mapsLink: "", visibility: "none" },
       school: { name: "", mapsLink: "", visibility: "none" },
       interests: [],
+      eventInterests: [],
       media: [],
       places: [],
       projects: [],
@@ -776,6 +538,14 @@ export function UserInfoForm() {
   const media = useFieldArray({ control: form.control, name: "media" })
   const places = useFieldArray({ control: form.control, name: "places" })
   const projects = useFieldArray({ control: form.control, name: "projects" })
+
+  // Watch media to compute per-tab counts; this keeps them reactive without
+  // coupling to the field-array `.fields` snapshot which only updates on
+  // insert/remove (not on field edits like type changes).
+  const watchedMedia = useWatch({
+    control: form.control,
+    name: "media",
+  }) as FormValues["media"] | undefined
 
   // The canonical identity for Name comes from the active user (Clerk in
   // production, seeded dev user in dev mode). The form field is uneditable
@@ -814,6 +584,7 @@ export function UserInfoForm() {
             visibility: "none",
           },
           interests: devProfile.interests || [],
+          eventInterests: devProfile.eventInterests || [],
           media: devProfile.media || [],
           places: devProfile.places || [],
           projects: devProfile.projects || [],
@@ -847,6 +618,7 @@ export function UserInfoForm() {
                   visibility: "none",
                 },
                 interests: userProfile.interests || [],
+                eventInterests: userProfile.eventInterests || [],
                 media: userProfile.media || [],
                 places: userProfile.places || [],
                 projects: userProfile.projects || [],
@@ -910,6 +682,7 @@ export function UserInfoForm() {
           visibility: data.visibility,
           currentStatus: activeRole as ("work" | "study")[],
           interests: data.interests,
+          eventInterests: data.eventInterests,
           media: data.media,
           places: data.places,
           projects: data.projects,
@@ -948,83 +721,95 @@ export function UserInfoForm() {
     <form
       id="form-user-profile"
       onSubmit={form.handleSubmit(onSubmit)}
-      className="mx-auto flex w-full max-w-5xl flex-col gap-8 p-4 md:p-8 lg:p-10"
+      className="flex w-full flex-col gap-8 p-2 md:p-4 lg:p-6"
     >
 
-      {/* ── Bento grid ────────────────────────────────────────────────── */}
-      <div className="grid gap-8 md:grid-cols-3">
-        {/* ── Basics (spans 2 cols on md) ──────────────────────────── */}
-        <SectionCard className="md:col-span-2">
-          <div className="flex items-center gap-3 mb-6">
+      {/* ── Top row: Basic Info + Current Status (2-col) ───────────────── */}
+      <div className="grid gap-8 md:grid-cols-2">
+        {/* Basic Info */}
+        <SectionCard id="section-basic">
+          <div className="flex items-center gap-3 mb-5">
             <div className="p-2 bg-primary/10 rounded-lg">
-              <span className="text-xl">👤</span>
+              <UserIcon className="size-5 text-primary" />
             </div>
-            <div className="text-left">
+            <div className="text-left flex items-center gap-1">
               <h2 className="text-xl font-semibold">Basic Information</h2>
-              <p className="text-sm text-muted-foreground">Your personal details and profile settings</p>
+              <FieldInfo text="Your personal details and profile settings. Name, email, and username are managed in your Clerk account." />
             </div>
           </div>
-          <FieldGroup className="gap-6">
-            <div className="grid gap-6 sm:grid-cols-2">
-              <Field className="gap-3">
-                <FieldLabel htmlFor="profile-name">Full Name</FieldLabel>
+          <FieldGroup className="gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field className="gap-2">
+                <div className="flex items-center">
+                  <FieldLabel htmlFor="profile-name">Full Name</FieldLabel>
+                  <FieldInfo
+                    text={
+                      activeUser.isDevMode
+                        ? "Dev mode — pinned to the selected seeded user."
+                        : "Managed in your Clerk account."
+                    }
+                  />
+                </div>
                 <Input
                   id="profile-name"
                   value={authFullName}
                   readOnly
                   disabled
-                  className="h-11 bg-muted/50 border-border cursor-not-allowed"
+                  className="h-10 bg-muted/50 border-border cursor-not-allowed"
                 />
-                <FieldDescription className="mt-1">
-                  {activeUser.isDevMode
-                    ? "Dev mode — pinned to the selected seeded user."
-                    : "Managed in your Clerk account."}
-                </FieldDescription>
               </Field>
-              <Field className="gap-3">
-                <FieldLabel htmlFor="profile-username">Username</FieldLabel>
+              <Field className="gap-2">
+                <div className="flex items-center">
+                  <FieldLabel htmlFor="profile-username">Username</FieldLabel>
+                  <FieldInfo
+                    text={
+                      activeUser.isDevMode
+                        ? "Dev mode — set on the seeded user."
+                        : "Your unique Clerk handle. Others can find you with this."
+                    }
+                  />
+                </div>
                 <Input
                   id="profile-username"
                   value={activeUser.username ? `@${activeUser.username}` : "—"}
                   readOnly
                   disabled
-                  className="h-11 bg-muted/50 border-border cursor-not-allowed"
+                  className="h-10 bg-muted/50 border-border cursor-not-allowed"
                 />
-                <FieldDescription className="mt-1">
-                  {activeUser.isDevMode
-                    ? "Dev mode — set on the seeded user."
-                    : "Your unique Clerk handle. Others can find you with this."}
-                </FieldDescription>
               </Field>
             </div>
-            <div className="grid gap-6 sm:grid-cols-2">
-              <Field className="gap-3">
-                <FieldLabel htmlFor="profile-email">Email</FieldLabel>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field className="gap-2">
+                <div className="flex items-center">
+                  <FieldLabel htmlFor="profile-email">Email</FieldLabel>
+                  <FieldInfo
+                    text={
+                      activeUser.isDevMode
+                        ? "Dev mode — set on the seeded user."
+                        : "Managed in your Clerk account."
+                    }
+                  />
+                </div>
                 <Input
                   id="profile-email"
                   value={activeUser.email ?? "—"}
                   readOnly
                   disabled
-                  className="h-11 bg-muted/50 border-border cursor-not-allowed"
+                  className="h-10 bg-muted/50 border-border cursor-not-allowed"
                 />
-                <FieldDescription className="mt-1">
-                  {activeUser.isDevMode
-                    ? "Dev mode — set on the seeded user."
-                    : "Managed in your Clerk account."}
-                </FieldDescription>
               </Field>
               <Controller
                 name="dob"
                 control={form.control}
                 render={({ field, fieldState }) => (
-                  <Field data-invalid={fieldState.invalid} className="gap-3">
+                  <Field data-invalid={fieldState.invalid} className="gap-2">
                     <FieldLabel htmlFor="profile-dob">Date of Birth</FieldLabel>
                     <Input
                       {...field}
                       id="profile-dob"
                       type="date"
                       aria-invalid={fieldState.invalid}
-                      className="h-11 bg-background border-border"
+                      className="h-10 bg-background border-border"
                     />
                     {fieldState.invalid && (
                       <FieldError errors={[fieldState.error]} />
@@ -1037,30 +822,30 @@ export function UserInfoForm() {
               name="visibility"
               control={form.control}
               render={({ field }) => (
-                <Field className="gap-3">
-                  <FieldLabel>Profile Visibility</FieldLabel>
+                <Field className="gap-2">
+                  <div className="flex items-center">
+                    <FieldLabel>Profile Visibility</FieldLabel>
+                    <FieldInfo text="Who can see your profile by default." />
+                  </div>
                   <VisibilitySelect
                     value={field.value}
                     onValueChange={field.onChange}
                   />
-                  <FieldDescription className="mt-2">
-                    Who can see your profile by default.
-                  </FieldDescription>
                 </Field>
               )}
             />
           </FieldGroup>
         </SectionCard>
 
-        {/* ── Work & Study toggle (1 col) ─────────────────────────── */}
-        <SectionCard className="flex flex-col">
-          <div className="flex items-center gap-3 mb-6">
+        {/* Current Status — workplace/school inline */}
+        <SectionCard id="section-status" className="flex flex-col">
+          <div className="flex items-center gap-3 mb-5">
             <div className="p-2 bg-primary/10 rounded-lg">
               <span className="text-xl">🎯</span>
             </div>
-            <div className="text-left">
+            <div className="text-left flex items-center gap-1">
               <h2 className="text-xl font-semibold">Current Status</h2>
-              <p className="text-sm text-muted-foreground">Tell us what you're currently focused on</p>
+              <FieldInfo text="Select what applies to you. Location info is only visible to close friends or kept completely private." />
             </div>
           </div>
           <div className="space-y-4">
@@ -1072,199 +857,151 @@ export function UserInfoForm() {
               className="flex-wrap justify-start gap-3"
               spacing={3}
             >
-              <ToggleGroupItem 
-                value="work" 
+              <ToggleGroupItem
+                value="work"
                 className="gap-2 px-4 py-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:shadow-sm transition-all"
               >
                 <BriefcaseIcon className="size-4" />
                 Working
               </ToggleGroupItem>
-              <ToggleGroupItem 
-                value="study" 
+              <ToggleGroupItem
+                value="study"
                 className="gap-2 px-4 py-2 data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:shadow-sm transition-all"
               >
                 <GraduationCapIcon className="size-4" />
                 Studying
               </ToggleGroupItem>
             </ToggleGroup>
-            <p className="text-sm text-muted-foreground bg-muted/30 p-4 rounded-lg border border-muted/50">
-              <span className="inline-flex items-center gap-2">
-                <svg className="size-4 text-muted-foreground/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Select what applies to you. Location info is only visible to close friends or kept completely private.
-              </span>
-            </p>
+
+            {showWork && (
+              <div className="border-l-2 border-primary/40 pl-3 flex flex-col gap-3">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <BriefcaseIcon className="size-4 text-primary" />
+                  Workplace
+                </div>
+                <Controller
+                  name="workplace.name"
+                  control={form.control}
+                  render={({ field }) => (
+                    <Field className="gap-1.5">
+                      <FieldLabel>Company / Organization</FieldLabel>
+                      <Input
+                        {...field}
+                        value={field.value ?? ""}
+                        placeholder="Where do you work?"
+                        className="bg-background border-border"
+                      />
+                    </Field>
+                  )}
+                />
+                <Controller
+                  name="workplace.mapsLink"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <Field data-invalid={fieldState.invalid} className="gap-1.5">
+                      <FieldLabel>Google Maps Link</FieldLabel>
+                      <Input
+                        {...field}
+                        value={field.value ?? ""}
+                        aria-invalid={fieldState.invalid}
+                        placeholder="https://maps.google.com/..."
+                        className="bg-background border-border"
+                      />
+                      {fieldState.invalid && (
+                        <FieldError errors={[fieldState.error]} />
+                      )}
+                    </Field>
+                  )}
+                />
+                <Controller
+                  name="workplace.visibility"
+                  control={form.control}
+                  render={({ field }) => (
+                    <Field className="gap-1.5">
+                      <FieldLabel>Visibility</FieldLabel>
+                      <SensitiveVisibilitySelect
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      />
+                    </Field>
+                  )}
+                />
+              </div>
+            )}
+
+            {showStudy && (
+              <div className="border-l-2 border-primary/40 pl-3 flex flex-col gap-3">
+                <div className="flex items-center gap-2 text-sm font-medium">
+                  <GraduationCapIcon className="size-4 text-primary" />
+                  Place of Study
+                </div>
+                <Controller
+                  name="school.name"
+                  control={form.control}
+                  render={({ field }) => (
+                    <Field className="gap-1.5">
+                      <FieldLabel>School / University</FieldLabel>
+                      <Input
+                        {...field}
+                        value={field.value ?? ""}
+                        placeholder="Where do you study?"
+                        className="bg-background border-border"
+                      />
+                    </Field>
+                  )}
+                />
+                <Controller
+                  name="school.mapsLink"
+                  control={form.control}
+                  render={({ field, fieldState }) => (
+                    <Field data-invalid={fieldState.invalid} className="gap-1.5">
+                      <FieldLabel>Google Maps Link</FieldLabel>
+                      <Input
+                        {...field}
+                        value={field.value ?? ""}
+                        aria-invalid={fieldState.invalid}
+                        placeholder="https://maps.google.com/..."
+                        className="bg-background border-border"
+                      />
+                      {fieldState.invalid && (
+                        <FieldError errors={[fieldState.error]} />
+                      )}
+                    </Field>
+                  )}
+                />
+                <Controller
+                  name="school.visibility"
+                  control={form.control}
+                  render={({ field }) => (
+                    <Field className="gap-1.5">
+                      <FieldLabel>Visibility</FieldLabel>
+                      <SensitiveVisibilitySelect
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      />
+                    </Field>
+                  )}
+                />
+              </div>
+            )}
           </div>
         </SectionCard>
-
-        {/* ── Workplace (conditional, spans full on md) ────────────── */}
-        {showWork && (
-          <SectionCard className="md:col-span-3">
-            <Accordion type="single" collapsible defaultValue="workplace" className="border-none">
-              <AccordionItem value="workplace" className="border-none bg-transparent">
-                <AccordionTrigger className="px-0 pt-0 hover:no-underline group [&>svg]:hidden">
-                  <div className="flex items-center gap-3 w-full">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      <BriefcaseIcon className="size-5 text-primary" />
-                    </div>
-                    <div className="text-left">
-                      <h3 className="text-lg font-semibold">Workplace</h3>
-                      <p className="text-sm text-muted-foreground">Add your work location details</p>
-                    </div>
-                    <svg className="size-5 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent>
-                  <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-3">
-                    <Controller
-                      name="workplace.name"
-                      control={form.control}
-                      render={({ field }) => (
-                        <Field>
-                          <FieldLabel>Company / Organization</FieldLabel>
-                          <Input
-                            {...field}
-                            value={field.value ?? ""}
-                            placeholder="Where do you work?"
-                            className="bg-background border-border"
-                          />
-                        </Field>
-                      )}
-                    />
-                    <Controller
-                      name="workplace.mapsLink"
-                      control={form.control}
-                      render={({ field, fieldState }) => (
-                        <Field data-invalid={fieldState.invalid}>
-                          <FieldLabel>Google Maps Link</FieldLabel>
-                          <Input
-                            {...field}
-                            value={field.value ?? ""}
-                            aria-invalid={fieldState.invalid}
-                            placeholder="https://maps.google.com/..."
-                            className="bg-background border-border"
-                          />
-                          {fieldState.invalid && (
-                            <FieldError errors={[fieldState.error]} />
-                          )}
-                        </Field>
-                      )}
-                    />
-                    <Controller
-                      name="workplace.visibility"
-                      control={form.control}
-                      render={({ field }) => (
-                        <Field>
-                          <FieldLabel>Visibility</FieldLabel>
-                          <SensitiveVisibilitySelect
-                            value={field.value}
-                            onValueChange={field.onChange}
-                          />
-                        </Field>
-                      )}
-                    />
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </SectionCard>
-        )}
-
-        {/* ── School (conditional, spans full on md) ───────────────── */}
-        {showStudy && (
-          <SectionCard className="md:col-span-3">
-            <Accordion type="single" collapsible defaultValue="school" className="border-none">
-              <AccordionItem value="school" className="border-none bg-transparent">
-                <AccordionTrigger className="px-0 pt-0 hover:no-underline group [&>svg]:hidden">
-                  <div className="flex items-center gap-3 w-full">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      <GraduationCapIcon className="size-5 text-primary" />
-                    </div>
-                    <div className="text-left">
-                      <h3 className="text-lg font-semibold">Place of Study</h3>
-                      <p className="text-sm text-muted-foreground">Add your educational institution details</p>
-                    </div>
-                    <svg className="size-5 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                  </div>
-                </AccordionTrigger>
-                <AccordionContent>
-                  <div className="grid gap-4 sm:grid-cols-1 md:grid-cols-3">
-                    <Controller
-                      name="school.name"
-                      control={form.control}
-                      render={({ field }) => (
-                        <Field>
-                          <FieldLabel>School / University</FieldLabel>
-                          <Input
-                            {...field}
-                            value={field.value ?? ""}
-                            placeholder="Where do you study?"
-                            className="bg-background border-border"
-                          />
-                        </Field>
-                      )}
-                    />
-                    <Controller
-                      name="school.mapsLink"
-                      control={form.control}
-                      render={({ field, fieldState }) => (
-                        <Field data-invalid={fieldState.invalid}>
-                          <FieldLabel>Google Maps Link</FieldLabel>
-                          <Input
-                            {...field}
-                            value={field.value ?? ""}
-                            aria-invalid={fieldState.invalid}
-                            placeholder="https://maps.google.com/..."
-                            className="bg-background border-border"
-                          />
-                          {fieldState.invalid && (
-                            <FieldError errors={[fieldState.error]} />
-                          )}
-                        </Field>
-                      )}
-                    />
-                    <Controller
-                      name="school.visibility"
-                      control={form.control}
-                      render={({ field }) => (
-                        <Field>
-                          <FieldLabel>Visibility</FieldLabel>
-                          <SensitiveVisibilitySelect
-                            value={field.value}
-                            onValueChange={field.onChange}
-                          />
-                        </Field>
-                      )}
-                    />
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
-          </SectionCard>
-        )}
       </div>
 
       {/* ── Collapsible list sections (bento accordion grid) ──────── */}
       <div className="grid gap-8 md:grid-cols-2">
         {/* Interests */}
-        <SectionCard className="md:col-span-2">
+        <SectionCard id="section-interests" className="md:col-span-2">
           <Accordion type="single" collapsible defaultValue="interests" className="border-none">
             <AccordionItem value="interests" className="border-none bg-transparent">
               <AccordionTrigger className="px-0 pt-0 hover:no-underline group [&>svg]:hidden">
                 <div className="flex items-center gap-3 w-full">
                   <div className="p-2 bg-primary/10 rounded-lg">
-                    <svg className="size-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                    </svg>
+                    <SparklesIcon className="size-5 text-primary" />
                   </div>
-                  <div className="text-left">
+                  <div className="text-left flex items-center gap-1">
                     <h3 className="text-lg font-semibold">Interests</h3>
-                    <p className="text-sm text-muted-foreground">Add your hobbies and interests</p>
+                    <FieldInfo text="Add the hobbies and interests you want to share." />
                   </div>
                   <div className="flex items-center gap-2 ml-auto">
                     {interests.fields.length > 0 && (
@@ -1340,20 +1077,69 @@ export function UserInfoForm() {
           </Accordion>
         </SectionCard>
 
+        {/* Events */}
+        <SectionCard id="section-events" className="md:col-span-2">
+          <Accordion type="single" collapsible defaultValue="events" className="border-none">
+            <AccordionItem value="events" className="border-none bg-transparent">
+              <AccordionTrigger className="px-0 pt-0 hover:no-underline group [&>svg]:hidden">
+                <div className="flex items-center gap-3 w-full">
+                  <div className="p-2 bg-primary/10 rounded-lg">
+                    <CalendarHeartIcon className="size-5 text-primary" />
+                  </div>
+                  <div className="text-left flex items-center gap-1">
+                    <h3 className="text-lg font-semibold">Events</h3>
+                    <FieldInfo text="Pick the kinds of events you'd go to. Friends can use this to invite you to things they think you'd enjoy." />
+                  </div>
+                  <div className="flex items-center gap-2 ml-auto">
+                    <Controller
+                      name="eventInterests"
+                      control={form.control}
+                      render={({ field }) => {
+                        const count = (field.value ?? []).length
+                        return count > 0 ? (
+                          <Badge variant="secondary">{count}</Badge>
+                        ) : (
+                          <span />
+                        )
+                      }}
+                    />
+                    <svg className="size-5 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+              </AccordionTrigger>
+              <AccordionContent>
+                <Controller
+                  name="eventInterests"
+                  control={form.control}
+                  render={({ field }) => (
+                    <EventInterestsField
+                      value={field.value ?? []}
+                      onChange={field.onChange}
+                      renderVisibility={({ value, onChange }) => (
+                        <InlineVisibilityDot value={value} onChange={onChange} />
+                      )}
+                    />
+                  )}
+                />
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
+        </SectionCard>
+
         {/* Media */}
-        <SectionCard className="md:col-span-2">
+        <SectionCard id="section-media" className="md:col-span-2">
           <Accordion type="single" collapsible defaultValue="media" className="border-none">
             <AccordionItem value="media" className="border-none bg-transparent">
               <AccordionTrigger className="px-0 pt-0 hover:no-underline group [&>svg]:hidden">
                 <div className="flex items-center gap-3 w-full">
                   <div className="p-2 bg-primary/10 rounded-lg">
-                    <svg className="size-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 4v16M17 4v16M3 8h4m10 0h4M3 16h4m10 0h4M4 4h16a1 1 0 011 1v14a1 1 0 01-1 1H4a1 1 0 01-1-1V5a1 1 0 011-1z" />
-                    </svg>
+                    <MusicIcon className="size-5 text-primary" />
                   </div>
-                  <div className="text-left">
+                  <div className="text-left flex items-center gap-1">
                     <h3 className="text-lg font-semibold">Media</h3>
-                    <p className="text-sm text-muted-foreground">Share your favorite music, movies, books</p>
+                    <FieldInfo text="Your favourite music, movies, books, series, podcasts, anime, and games. Click a card to edit." />
                   </div>
                   <div className="flex items-center gap-2 ml-auto">
                     {media.fields.length > 0 && (
@@ -1368,57 +1154,85 @@ export function UserInfoForm() {
                 </div>
               </AccordionTrigger>
               <AccordionContent>
-                <div className="flex flex-col gap-4">
-                  {media.fields.map((item, index) => (
-                    <MediaRow
-                      key={item.id}
-                      index={index}
-                      form={form}
-                      onRemove={() => media.remove(index)}
-                    />
-                  ))}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      media.append({
-                        title: "",
-                        type: "music",
-                        visibility: "friends",
-                        externalSource: undefined,
-                        externalId: undefined,
-                        externalKind: undefined,
-                        subtitle: undefined,
-                        imageUrl: undefined,
+                <Tabs defaultValue="all" className="w-full">
+                  <TabsList className="flex flex-wrap h-auto">
+                    {MEDIA_TABS.map((tab) => {
+                      const count = (watchedMedia ?? []).filter((m) =>
+                        tab.match(m?.type as MediaType),
+                      ).length
+                      return (
+                        <TabsTrigger key={tab.id} value={tab.id}>
+                          {tab.label}
+                          {count > 0 && (
+                            <span className="ml-1 text-[11px] text-muted-foreground">
+                              ({count})
+                            </span>
+                          )}
+                        </TabsTrigger>
+                      )
+                    })}
+                  </TabsList>
+                  {MEDIA_TABS.map((tab) => {
+                    // Map each field-array index to whether its current media
+                    // row matches this tab — filter the rendered cards by that.
+                    const visibleIndexes = (media.fields ?? [])
+                      .map((_, idx) => idx)
+                      .filter((idx) => {
+                        const t = (watchedMedia?.[idx]?.type ?? "other") as MediaType
+                        return tab.match(t)
                       })
-                    }
-                    className="w-fit"
-                  >
-                    <PlusIcon className="mr-1 size-4" />
-                    Add Media
-                  </Button>
-                </div>
+                    return (
+                      <TabsContent key={tab.id} value={tab.id} className="pt-4">
+                        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(160px,1fr))]">
+                          {visibleIndexes.map((idx) => (
+                            <MediaCard
+                              key={media.fields[idx]?.id ?? idx}
+                              index={idx}
+                              form={form}
+                              onRemove={() => media.remove(idx)}
+                            />
+                          ))}
+                          <AddMediaButton
+                            onClick={() =>
+                              media.append({
+                                title: "",
+                                type:
+                                  tab.id === "all" || tab.id === "other"
+                                    ? "music"
+                                    : tab.id === "book"
+                                      ? "book"
+                                      : (tab.id as MediaType),
+                                visibility: "friends",
+                                externalSource: undefined,
+                                externalId: undefined,
+                                externalKind: undefined,
+                                subtitle: undefined,
+                                imageUrl: undefined,
+                              })
+                            }
+                          />
+                        </div>
+                      </TabsContent>
+                    )
+                  })}
+                </Tabs>
               </AccordionContent>
             </AccordionItem>
           </Accordion>
         </SectionCard>
 
         {/* Places (spans full width) */}
-        <SectionCard className="md:col-span-2">
+        <SectionCard id="section-places" className="md:col-span-2">
           <Accordion type="single" collapsible defaultValue="places" className="border-none">
             <AccordionItem value="places" className="border-none bg-transparent">
               <AccordionTrigger className="px-0 pt-0 hover:no-underline group [&>svg]:hidden">
                 <div className="flex items-center gap-3 w-full">
                   <div className="p-2 bg-primary/10 rounded-lg">
-                    <svg className="size-5 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                    </svg>
+                    <MapPinIcon className="size-5 text-primary" />
                   </div>
-                  <div className="text-left">
+                  <div className="text-left flex items-center gap-1">
                     <h3 className="text-lg font-semibold">Favorite Places</h3>
-                    <p className="text-sm text-muted-foreground">Add locations you love to visit</p>
+                    <FieldInfo text="Spots you love — friends can find hangouts near them based on this." />
                   </div>
                   <div className="flex items-center gap-2 ml-auto">
                     {places.fields.length > 0 && (
@@ -1609,7 +1423,7 @@ export function UserInfoForm() {
         </SectionCard>
 
         {/* Projects (spans full width) */}
-        <SectionCard className="md:col-span-2">
+        <SectionCard id="section-projects" className="md:col-span-2">
           <Accordion type="single" collapsible defaultValue="projects" className="border-none">
             <AccordionItem value="projects" className="border-none bg-transparent">
               <AccordionTrigger className="px-0 pt-0 hover:no-underline group [&>svg]:hidden">
@@ -1619,9 +1433,9 @@ export function UserInfoForm() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                     </svg>
                   </div>
-                  <div className="text-left">
+                  <div className="text-left flex items-center gap-1">
                     <h3 className="text-lg font-semibold">Projects</h3>
-                    <p className="text-sm text-muted-foreground">Showcase your work and side projects</p>
+                    <FieldInfo text="Things you're building or have built. Tags help others spot shared interests." />
                   </div>
                   <div className="flex items-center gap-2 ml-auto">
                     {projects.fields.length > 0 && (
@@ -1763,5 +1577,82 @@ export function UserInfoForm() {
         </Button>
       </div>
     </form>
+  )
+}
+
+// ── Small building blocks used above ─────────────────────────────────────────
+
+function AddMediaButton({ onClick }: { onClick: () => void }) {
+  // Matches the MediaCard footprint: aspect-square hero area + ~50px of
+  // title/subtitle padding underneath.
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex flex-col items-center justify-center gap-2 min-h-[210px] rounded-xl border-2 border-dashed border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground hover:bg-muted/40 transition-colors"
+    >
+      <PlusIcon className="size-5" />
+      <span className="text-xs font-medium">Add media</span>
+    </button>
+  )
+}
+
+function InlineVisibilityDot({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (next: string) => void
+}) {
+  return (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger
+        size="sm"
+        aria-label="Visibility"
+        className={cn(
+          "h-5 w-5 p-0 rounded-full border-0 bg-transparent shadow-none hover:bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0",
+          "[&>svg]:hidden",
+        )}
+      >
+        <span
+          className={cn(
+            "size-2.5 rounded-full",
+            value === "close"
+              ? "bg-red-500"
+              : value === "friends"
+                ? "bg-blue-500"
+                : value === "mutual"
+                  ? "bg-green-500"
+                  : "bg-gray-500",
+          )}
+        />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="close">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-red-500 rounded-full"></div>
+            Close
+          </div>
+        </SelectItem>
+        <SelectItem value="friends">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+            Friends
+          </div>
+        </SelectItem>
+        <SelectItem value="mutual">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+            Mutual
+          </div>
+        </SelectItem>
+        <SelectItem value="none">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 bg-gray-500 rounded-full"></div>
+            No One
+          </div>
+        </SelectItem>
+      </SelectContent>
+    </Select>
   )
 }
