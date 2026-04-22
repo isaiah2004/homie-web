@@ -10,7 +10,7 @@ import { useActiveUser } from "@/hooks/use-active-user"
 import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
-import { SiteHeader } from "@/components/site-header"
+import { DevSiteHeader } from "@/components/dev/DevSiteHeader"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -45,7 +45,7 @@ export default function Page() {
   if (!isDevMode) {
     return (
       <div>
-        <SiteHeader pageName="Dev billing" />
+        <DevSiteHeader pageName="Dev billing" />
         <div className="mx-auto w-full max-w-2xl p-6">
           <div className="rounded-lg border border-dashed p-6 text-center">
             <AlertTriangleIcon className="mx-auto size-6 text-amber-500" />
@@ -66,7 +66,7 @@ export default function Page() {
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
       <div>
-        <SiteHeader pageName="Dev billing" />
+        <DevSiteHeader pageName="Dev billing" />
         <PickDevUserEmptyState pageName="dev billing" />
       </div>
     )
@@ -112,7 +112,7 @@ export default function Page() {
 
   return (
     <div>
-      <SiteHeader pageName="Dev billing" />
+      <DevSiteHeader pageName="Dev billing" />
       <div className="flex flex-1 flex-col">
         <div className="@container/main mx-auto w-full max-w-3xl flex-1 p-4 md:p-6">
           <div className="rounded-md border border-amber-500/40 bg-amber-50 p-3 dark:bg-amber-950/30">

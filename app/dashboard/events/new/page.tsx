@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Controller, useForm } from "react-hook-form"
@@ -72,6 +73,25 @@ function datetimeLocalToEpoch(s: string): number {
 }
 
 export default function Page() {
+  // Next.js 16 prerenders this page at build time; useSearchParams()
+  // requires a Suspense boundary to survive SSR bailout. Wrap the body
+  // so the prerender falls back to a lightweight skeleton without
+  // throwing.
+  return (
+    <Suspense
+      fallback={
+        <div>
+          <SiteHeader pageName="New Event" />
+          <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+        </div>
+      }
+    >
+      <NewEventForm />
+    </Suspense>
+  )
+}
+
+function NewEventForm() {
   const activeUser = useActiveUser()
   const router = useRouter()
   const searchParams = useSearchParams()
