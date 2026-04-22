@@ -34,6 +34,7 @@ import {
 import {
   LayoutDashboard,
   Bot,
+  Building2Icon,
   ChartBar,
   Folder,
   Users,
@@ -77,6 +78,11 @@ const data = {
       title: "Events",
       url: "/dashboard/events",
       icon: <CalendarDaysIcon />,
+    },
+    {
+      title: "Businesses",
+      url: "/dashboard/businesses",
+      icon: <Building2Icon />,
     },
     {
       title: "Profile",
