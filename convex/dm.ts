@@ -8,6 +8,7 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
+import { sanitizeMessageHtml } from "../lib/sanitize-html";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -21,12 +22,12 @@ function sortedPair(
   return a < b ? { userAId: a, userBId: b } : { userAId: b, userBId: a };
 }
 
-// Regex used to detect the `@agent` tag anywhere in a message body.
-// Case-insensitive, word-boundary guarded to avoid matching `@agentry`.
-const AGENT_MENTION = /@agent\b/i;
+// Detect the `@homie` tag (and the legacy `@agent` alias) anywhere in a
+// message body. Case-insensitive, word-boundary guarded.
+const HOMIE_MENTION = /(@homie|@agent)\b/i;
 
-function hasAgentMention(content: string): boolean {
-  return AGENT_MENTION.test(content);
+function hasHomieMention(content: string): boolean {
+  return HOMIE_MENTION.test(content);
 }
 
 async function requireFriendship(
@@ -196,35 +197,94 @@ export const openConversation = mutation({
 });
 
 // Send a human-authored message. Never emits an agent-authored row on its own —
-// `@agent` mentions only set the pill flag; agent replies travel through
+// `@homie` mentions only set the pill flag; agent replies travel through
 // `askAgent` + `shareAgentResponse`.
 export const sendMessage = mutation({
   args: {
     from: v.id("users"),
     to: v.id("users"),
     content: v.string(),
+    format: v.optional(
+      v.union(
+        v.literal("plain"),
+        v.literal("markdown"),
+        v.literal("html"),
+      ),
+    ),
+    attachmentIds: v.optional(v.array(v.id("attachments"))),
+    plainText: v.optional(v.string()),
   },
-  handler: async (ctx, { from, to, content }) => {
-    const trimmed = content.trim();
-    if (!trimmed) throw new Error("Message cannot be empty");
+  handler: async (
+    ctx,
+    { from, to, content, format, attachmentIds, plainText },
+  ) => {
     await requireFriendship(ctx, from, to);
+
+    // Normalize content. HTML composes sanitize server-side before insert.
+    const rawContent = content ?? "";
+    const normalizedContent =
+      format === "html"
+        ? sanitizeMessageHtml(rawContent)
+        : rawContent.trim();
+
+    // Require at least one of: non-empty content OR at least one attachment.
+    // For HTML format we check the stripped text length so that bare
+    // `<p></p>` whitespace alone isn't counted as content.
+    const hasBody =
+      format === "html"
+        ? (plainText?.trim().length ?? 0) > 0 ||
+          normalizedContent.replace(/<[^>]+>/g, "").trim().length > 0
+        : normalizedContent.length > 0;
+    const hasAttachments = (attachmentIds?.length ?? 0) > 0;
+    if (!hasBody && !hasAttachments) {
+      throw new Error("Message cannot be empty");
+    }
+
+    // Validate attachment ownership to prevent referencing someone else's
+    // upload. (Attachments themselves are public once in R2, but we don't
+    // want other users' files to appear in a conversation's DM log.)
+    if (attachmentIds && attachmentIds.length > 0) {
+      for (const aid of attachmentIds) {
+        const attachment = await ctx.db.get(aid);
+        if (!attachment) throw new Error("Attachment not found");
+        if (attachment.userId !== from) {
+          throw new Error("Cannot attach someone else's file");
+        }
+      }
+    }
 
     const conversationId = await upsertConversation(ctx, from, to);
     const now = Date.now();
+
+    const mentionSource =
+      format === "html"
+        ? (plainText ?? normalizedContent.replace(/<[^>]+>/g, " "))
+        : normalizedContent;
 
     const messageId = await ctx.db.insert("directMessages", {
       conversationId,
       from,
       to,
-      content: trimmed,
+      content: normalizedContent,
       author: "user",
-      mentionsAgent: hasAgentMention(trimmed),
+      mentionsAgent: hasHomieMention(mentionSource),
+      format,
+      attachmentIds,
       sentAt: now,
     });
 
+    const previewSource =
+      plainText ?? normalizedContent.replace(/<[^>]+>/g, "").trim();
+    const preview =
+      previewSource.length > 0
+        ? previewSource.slice(0, 140)
+        : hasAttachments
+          ? "📎 Attachment"
+          : "";
+
     await ctx.db.patch(conversationId, {
       lastMessageAt: now,
-      lastPreview: trimmed.slice(0, 140),
+      lastPreview: preview,
     });
 
     return { conversationId, messageId };
@@ -240,7 +300,10 @@ export const askAgent = mutation({
     query: v.string(),
   },
   handler: async (ctx, { askerId, otherId, query }) => {
-    const cleaned = query.replace(AGENT_MENTION, "").trim();
+    // Strip the mention token(s) before sending to the model so the agent
+    // doesn't echo "you tagged me" and so both `@homie` and `@agent`
+    // aliases work identically.
+    const cleaned = query.replace(/(@homie|@agent)\b/gi, "").trim();
     if (!cleaned) throw new Error("Ask the agent something");
     await requireFriendship(ctx, askerId, otherId);
 
@@ -302,6 +365,7 @@ export const shareAgentResponse = mutation({
       content: response.content,
       author: "agent",
       mentionsAgent: false,
+      format: "markdown",
       sentAt: now,
     });
     await ctx.db.patch(response.conversationId, {

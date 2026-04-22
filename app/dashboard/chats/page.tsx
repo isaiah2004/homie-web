@@ -25,20 +25,21 @@ import {
 } from "@/components/ui/dialog"
 import {
   BotIcon,
-  CheckIcon,
   MessageSquarePlusIcon,
   SearchIcon,
   Share2Icon,
-  SparklesIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react"
+
+import { MessageContent } from "@/components/chat/message-content"
+import { RichTextComposer } from "@/components/chat/RichTextComposer"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Small helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-const AGENT_MENTION = /@agent\b/i
+const HOMIE_MENTION = /(@homie|@agent)\b/i
 
 function initials(name: string) {
   return name
@@ -63,13 +64,13 @@ function formatTime(ms: number) {
   return d.toLocaleDateString([], { month: "short", day: "numeric" })
 }
 
-// Split composer text so `@agent` renders as a styled pill while the rest
-// stays plain text. Used both in the composer preview and in rendered
-// messages that happen to contain an agent mention.
-function renderWithAgentPill(content: string): React.ReactNode {
+// Split composer text so `@homie` renders as a styled pill while the rest
+// stays plain text. Used in rendered messages that happen to contain an
+// agent mention.
+function renderWithHomiePill(content: string): React.ReactNode {
   const parts: React.ReactNode[] = []
   let lastIndex = 0
-  const regex = /@agent\b/gi
+  const regex = /(@homie|@agent)\b/gi
   let match: RegExpExecArray | null
   while ((match = regex.exec(content)) !== null) {
     if (match.index > lastIndex) {
@@ -81,7 +82,7 @@ function renderWithAgentPill(content: string): React.ReactNode {
         className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-violet-100 text-violet-800 border border-violet-200 text-xs font-medium align-baseline"
       >
         <BotIcon className="size-3" />
-        agent
+        homie
       </span>,
     )
     lastIndex = match.index + match[0].length
@@ -98,7 +99,14 @@ function renderWithAgentPill(content: string): React.ReactNode {
 
 export default function Page() {
   return (
-    <React.Suspense fallback={<div><SiteHeader pageName="Chats" /><div className="p-6 text-sm text-muted-foreground">Loading…</div></div>}>
+    <React.Suspense
+      fallback={
+        <div>
+          <SiteHeader pageName="Chats" />
+          <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+        </div>
+      }
+    >
       <ChatsContent />
     </React.Suspense>
   )
@@ -167,7 +175,9 @@ function ChatsContent() {
         // Drop the param so we don't re-trigger on every render.
         router.replace("/dashboard/chats")
       })
-      .catch((err) => toast.error(err instanceof Error ? err.message : String(err)))
+      .catch((err) =>
+        toast.error(err instanceof Error ? err.message : String(err)),
+      )
   }, [viewerId, withParam, openConversation, router])
 
   // Default-select the most recent conversation once loaded, unless the URL
@@ -193,6 +203,37 @@ function ChatsContent() {
     [agentResponses],
   )
 
+  // Resolve attachments once per view. We collect every `attachmentIds`
+  // entry across the conversation's visible messages, call `getMany` with
+  // the deduped list, and key them by id for O(1) lookup in the bubble.
+  const attachmentIdList = React.useMemo(() => {
+    if (!messages) return [] as Id<"attachments">[]
+    const seen = new Set<string>()
+    const out: Id<"attachments">[] = []
+    for (const m of messages) {
+      for (const id of m.attachmentIds ?? []) {
+        if (!seen.has(id)) {
+          seen.add(id)
+          out.push(id)
+        }
+      }
+    }
+    return out
+  }, [messages])
+
+  const attachmentRows = useQuery(
+    api.attachments.getMany,
+    attachmentIdList.length > 0 ? { ids: attachmentIdList } : "skip",
+  )
+
+  const attachmentsById = React.useMemo(() => {
+    const map = new Map<string, Doc<"attachments">>()
+    for (const a of attachmentRows ?? []) {
+      if (a) map.set(a._id, a)
+    }
+    return map
+  }, [attachmentRows])
+
   // Mutations
   const sendMessage = useMutation(api.dm.sendMessage)
   const askAgent = useMutation(api.dm.askAgent)
@@ -214,37 +255,41 @@ function ChatsContent() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  // Composer state
-  const [composerText, setComposerText] = React.useState("")
-  const isAgentQuery = AGENT_MENTION.test(composerText)
+  // Composer mention state — surfaced as a banner above the editor.
+  const [isAgentQuery, setIsAgentQuery] = React.useState(false)
 
-  async function handleSubmit() {
+  async function handleSend(payload: {
+    html: string
+    plainText: string
+    attachmentIds: Id<"attachments">[]
+    mentionsHomie: boolean
+  }) {
     if (!viewerId || !activeConv) return
-    const text = composerText.trim()
-    if (!text) return
-
     const otherId = activeConv.other?._id
     if (!otherId) {
       toast.error("Conversation is missing the other participant")
       return
     }
 
-    setComposerText("")
-    try {
-      if (AGENT_MENTION.test(text)) {
-        await askAgent({
-          askerId: viewerId,
-          otherId,
-          query: text,
-        })
-        toast.success("Asking your agent privately")
-      } else {
-        await sendMessage({ from: viewerId, to: otherId, content: text })
-      }
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to send")
-      setComposerText(text)
+    if (payload.mentionsHomie) {
+      await askAgent({
+        askerId: viewerId,
+        otherId,
+        query: payload.plainText,
+      })
+      toast.success("Asking your agent privately")
+      return
     }
+
+    await sendMessage({
+      from: viewerId,
+      to: otherId,
+      content: payload.html,
+      format: "html",
+      attachmentIds:
+        payload.attachmentIds.length > 0 ? payload.attachmentIds : undefined,
+      plainText: payload.plainText,
+    })
   }
 
   async function handleShare(responseId: Id<"agentChatResponses">) {
@@ -304,11 +349,13 @@ function ChatsContent() {
                 <h3 className="font-semibold">Conversations</h3>
                 <NewChatButton
                   friends={friends ?? []}
-                  existingOtherIds={new Set(
-                    (conversations ?? [])
-                      .map((c) => c.other?._id)
-                      .filter((id): id is Id<"users"> => !!id),
-                  )}
+                  existingOtherIds={
+                    new Set(
+                      (conversations ?? [])
+                        .map((c) => c.other?._id)
+                        .filter((id): id is Id<"users"> => !!id),
+                    )
+                  }
                   onPick={async (otherId) => {
                     try {
                       const convId = await openConversation({
@@ -343,9 +390,7 @@ function ChatsContent() {
                           other={c.other}
                           unread={c.unreadCount}
                           active={c.conversation._id === activeConvId}
-                          onClick={() =>
-                            setActiveConvId(c.conversation._id)
-                          }
+                          onClick={() => setActiveConvId(c.conversation._id)}
                         />
                       ) : null,
                     )
@@ -394,6 +439,7 @@ function ChatsContent() {
                             key={m._id}
                             message={m}
                             viewerId={viewerId}
+                            attachmentsById={attachmentsById}
                           />
                         ))
                       )}
@@ -413,41 +459,23 @@ function ChatsContent() {
                         </span>
                       </div>
                     )}
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Message…  (tag @agent to ask privately)"
-                        value={composerText}
-                        onChange={(e) => setComposerText(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault()
-                            handleSubmit()
-                          }
-                        }}
-                        className="flex-1"
-                      />
-                      <Button onClick={handleSubmit} disabled={!composerText.trim()}>
-                        {isAgentQuery ? (
-                          <>
-                            <SparklesIcon className="size-4 mr-1" />
-                            Ask agent
-                          </>
-                        ) : (
-                          "Send"
-                        )}
-                      </Button>
-                    </div>
+                    <RichTextComposer
+                      viewerId={viewerId}
+                      placeholder="Message…  (tag @homie to ask privately)"
+                      onSend={handleSend}
+                      onMentionChange={setIsAgentQuery}
+                    />
                   </div>
                 </>
               )}
             </div>
 
-            {/* ─── Agent drawer (private) ─── */}
+            {/* ─── Homie drawer (private) ─── */}
             {activeConv && (
               <div className="w-80 border rounded-lg bg-card flex flex-col overflow-hidden">
                 <div className="p-4 border-b shrink-0 flex items-center gap-2">
                   <BotIcon className="size-4 text-violet-600" />
-                  <h3 className="font-semibold">Agent drawer</h3>
+                  <h3 className="font-semibold">Homie drawer</h3>
                   <Badge variant="outline" className="text-xs">
                     Private
                   </Badge>
@@ -456,10 +484,10 @@ function ChatsContent() {
                   <div className="p-3 space-y-3">
                     {pendingAgentResponses.length === 0 ? (
                       <div className="text-center text-xs text-muted-foreground py-8 px-2">
-                        Tag <code className="px-1 bg-muted rounded">@agent</code>{" "}
-                        in the composer to ask a private question (plans,
-                        prices, logistics). Answers appear here until you
-                        share them.
+                        Tag{" "}
+                        <code className="px-1 bg-muted rounded">@homie</code>{" "}
+                        in the composer to ask privately (plans, prices,
+                        logistics). Answers appear here until you share them.
                       </div>
                     ) : (
                       pendingAgentResponses.map((r) => (
@@ -536,12 +564,41 @@ function ConversationRow({
 function MessageBubble({
   message,
   viewerId,
+  attachmentsById,
 }: {
   message: Doc<"directMessages">
   viewerId: Id<"users">
+  attachmentsById: Map<string, Doc<"attachments">>
 }) {
   const mine = message.from === viewerId
   const isAgent = message.author === "agent"
+
+  const resolvedAttachments = React.useMemo(() => {
+    if (!message.attachmentIds || message.attachmentIds.length === 0) return []
+    return message.attachmentIds
+      .map((id) => attachmentsById.get(id))
+      .filter((a): a is Doc<"attachments"> => !!a)
+      .map((a) => ({
+        id: a._id,
+        kind: a.kind,
+        fileName: a.fileName,
+        publicUrl: a.publicUrl,
+        contentType: a.contentType,
+        size: a.size,
+      }))
+  }, [message.attachmentIds, attachmentsById])
+
+  // Messages with a mention token should still show the homie pill — when
+  // the format is HTML, strip the tags to find the raw token. Otherwise
+  // render the content via MessageContent.
+  const plainForPill = React.useMemo(() => {
+    if (message.format === "html") {
+      return message.content.replace(/<[^>]+>/g, " ")
+    }
+    return message.content
+  }, [message.content, message.format])
+
+  const hasMention = HOMIE_MENTION.test(plainForPill)
 
   return (
     <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
@@ -552,24 +609,33 @@ function MessageBubble({
               ? "bg-violet-100 border border-violet-200 text-violet-900"
               : "bg-primary text-primary-foreground"
             : isAgent
-            ? "bg-violet-50 border border-violet-200 text-violet-900"
-            : "bg-muted"
+              ? "bg-violet-50 border border-violet-200 text-violet-900"
+              : "bg-muted"
         }`}
       >
         {isAgent && (
           <div className="flex items-center gap-1 text-xs font-medium mb-1">
             <BotIcon className="size-3.5" />
-            <span>
-              {mine ? "Your agent" : "Their agent"} · shared
-            </span>
+            <span>{mine ? "Your agent" : "Their agent"} · shared</span>
           </div>
         )}
-        <p className="text-sm whitespace-pre-wrap break-words">
-          {renderWithAgentPill(message.content)}
-        </p>
+        {hasMention && !isAgent && message.format !== "html" ? (
+          <p className="text-sm whitespace-pre-wrap break-words">
+            {renderWithHomiePill(message.content)}
+          </p>
+        ) : (
+          <MessageContent
+            content={message.content}
+            format={message.format}
+            isUser={mine && !isAgent}
+            attachments={resolvedAttachments}
+          />
+        )}
         <p
           className={`text-xs mt-1 ${
-            mine && !isAgent ? "text-primary-foreground/70" : "text-muted-foreground"
+            mine && !isAgent
+              ? "text-primary-foreground/70"
+              : "text-muted-foreground"
           }`}
         >
           {formatTime(message.sentAt)}
@@ -620,7 +686,11 @@ function AgentResponseCard({
         </div>
       ) : (
         <>
-          <p className="text-sm whitespace-pre-wrap">{response.content}</p>
+          <MessageContent
+            content={response.content}
+            format="markdown"
+            isUser={false}
+          />
           <div className="flex gap-2">
             <Button size="sm" className="flex-1" onClick={onShare}>
               <Share2Icon className="size-3 mr-1" />
