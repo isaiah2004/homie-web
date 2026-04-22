@@ -15,11 +15,12 @@ import {
 } from "lucide-react"
 
 import { api } from "@/convex/_generated/api"
-import type { Id } from "@/convex/_generated/dataModel"
+import type { Doc, Id } from "@/convex/_generated/dataModel"
 import { useActiveUser } from "@/hooks/use-active-user"
 import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
+import { AdCard } from "@/components/ad-card"
 import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -32,6 +33,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 type CommunityRole = "admin" | "moderator" | "announcer" | "member"
 const ASSIGNABLE_ROLES: CommunityRole[] = [
@@ -404,16 +412,7 @@ export default function Page() {
             </TabsContent>
 
             <TabsContent value="ads" className="mt-4">
-              <div className="rounded-lg border border-dashed bg-card p-8 text-center">
-                <MegaphoneIcon className="mx-auto size-6 text-muted-foreground" />
-                <p className="mt-3 text-sm font-medium">
-                  Ad placements coming soon
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  PR #7 adds the ability to surface relevant business
-                  ads inside this community.
-                </p>
-              </div>
+              <AdsTab community={community} isAdmin={isAdmin} />
             </TabsContent>
           </Tabs>
 
@@ -474,6 +473,160 @@ function NotAllowed() {
           <Link href="/dashboard/communities">Back to communities</Link>
         </Button>
       </div>
+    </div>
+  )
+}
+
+// Ads tab on the community manage page. Paid communities get a picker
+// (approved/running ads); free-tier communities see only the info card
+// plus the current auto-placement (if any).
+function AdsTab({
+  community,
+  isAdmin,
+}: {
+  community: Doc<"communities">
+  isAdmin: boolean
+}) {
+  const activeUser = useActiveUser()
+  const skip = activeUser.isDevMode
+    ? !activeUser.devUserId
+    : !activeUser.isLoaded
+  const identityArg =
+    activeUser.isDevMode && activeUser.devUserId
+      ? { devUserId: activeUser.devUserId }
+      : {}
+
+  const placements = useQuery(
+    api.communityAds.listPlacementsForCommunity,
+    skip || !isAdmin
+      ? "skip"
+      : { communityId: community._id, ...identityArg },
+  )
+  // Only paid communities get the full picker list; skip the query
+  // otherwise so we don't surface admin-only data unnecessarily.
+  const available = useQuery(
+    api.communityAds.listAvailableAds,
+    skip || !isAdmin || !community.isPaid
+      ? "skip"
+      : { communityId: community._id, ...identityArg },
+  )
+  const pickAd = useIdentifiedMutation(api.communityAds.pickAd)
+
+  const [selectedAdId, setSelectedAdId] = React.useState<string>("")
+  const [applying, setApplying] = React.useState(false)
+
+  async function handleApply() {
+    if (!selectedAdId) return
+    setApplying(true)
+    try {
+      await pickAd({
+        communityId: community._id,
+        adId: selectedAdId as Id<"ads">,
+      })
+      toast.success("Ad placement updated")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed")
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  const currentPlacement = placements?.[0]
+
+  return (
+    <div className="space-y-4">
+      {!community.isPaid && (
+        <div className="rounded-lg border bg-card p-4">
+          <div className="flex items-start gap-3">
+            <MegaphoneIcon className="size-5 shrink-0 text-muted-foreground" />
+            <div>
+              <p className="text-sm font-medium">Free tier</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Free-tier communities get an auto-rotated ad each week.
+                Upgrade to pick your ads.
+              </p>
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                className="mt-3"
+              >
+                <Link href="/dev/billing">Go to billing</Link>
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-lg border bg-card p-4">
+        <p className="text-sm font-medium">This week&apos;s placement</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Shown in the community sidebar. Rotates every Monday for free-tier
+          communities.
+        </p>
+        {placements === undefined ? (
+          <p className="mt-3 text-xs text-muted-foreground">Loading…</p>
+        ) : currentPlacement ? (
+          <div className="mt-3 space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline" className="text-[10px]">
+                {currentPlacement.placement.placementType === "auto"
+                  ? "Auto"
+                  : "Admin pick"}
+              </Badge>
+            </div>
+            <AdCard ad={currentPlacement.ad} context="business" />
+          </div>
+        ) : (
+          <p className="mt-3 text-xs text-muted-foreground">
+            No placement for this week yet. {community.isPaid
+              ? "Pick one below."
+              : "The weekly rotation will fill this in."}
+          </p>
+        )}
+      </div>
+
+      {community.isPaid && (
+        <div className="rounded-lg border bg-card p-4">
+          <p className="text-sm font-medium">Pick an ad</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Choose from approved and running ads.
+          </p>
+          {available === undefined ? (
+            <p className="mt-3 text-xs text-muted-foreground">Loading…</p>
+          ) : available.length === 0 ? (
+            <p className="mt-3 text-xs text-muted-foreground">
+              No approved ads yet.
+            </p>
+          ) : (
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <Select
+                value={selectedAdId}
+                onValueChange={(v) => setSelectedAdId(v)}
+              >
+                <SelectTrigger className="w-full max-w-sm">
+                  <SelectValue placeholder="Select an ad" />
+                </SelectTrigger>
+                <SelectContent>
+                  {available.map((row) => (
+                    <SelectItem key={row.ad._id} value={row.ad._id}>
+                      {row.ad.title}
+                      {row.business ? ` · ${row.business.name}` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                onClick={handleApply}
+                disabled={!selectedAdId || applying}
+              >
+                Apply
+              </Button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

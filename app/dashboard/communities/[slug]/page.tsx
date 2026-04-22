@@ -26,6 +26,7 @@ import { useActiveUser } from "@/hooks/use-active-user"
 import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
+import { AdCard } from "@/components/ad-card"
 import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -114,8 +115,19 @@ export default function Page() {
       ? "skip"
       : { communityId: community._id, ...identityArg },
   )
+  const placements = useQuery(
+    api.communityAds.listPlacementsForCommunity,
+    skip || !community || !isMember
+      ? "skip"
+      : { communityId: community._id, ...identityArg },
+  )
+  const savedCoupons = useQuery(
+    api.communityAds.listSavedCoupons,
+    skip || !isMember ? "skip" : identityArg,
+  )
 
   const votePoll = useIdentifiedMutation(api.communityPolls.vote)
+  const saveCoupon = useIdentifiedMutation(api.communityAds.saveCoupon)
 
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
@@ -394,6 +406,49 @@ export default function Page() {
                     }}
                   />
                 </div>
+                {placements && placements.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold">Sponsored</h3>
+                    <div className="mt-2 space-y-3">
+                      {placements.map((row) => {
+                        const savedIds = new Set(
+                          (savedCoupons ?? []).map((s) => s.ad._id),
+                        )
+                        const isSaved = savedIds.has(row.ad._id)
+                        return (
+                          <AdCard
+                            key={row.placement._id}
+                            ad={row.ad}
+                            context="community"
+                            isCouponSaved={isSaved}
+                            onSaveCoupon={
+                              row.ad.couponCode
+                                ? async () => {
+                                    try {
+                                      const res = await saveCoupon({
+                                        adId: row.ad._id,
+                                      })
+                                      toast.success(
+                                        res.alreadySaved
+                                          ? "Already saved"
+                                          : "Coupon saved",
+                                      )
+                                    } catch (err) {
+                                      toast.error(
+                                        err instanceof Error
+                                          ? err.message
+                                          : "Failed",
+                                      )
+                                    }
+                                  }
+                                : undefined
+                            }
+                          />
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

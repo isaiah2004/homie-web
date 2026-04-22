@@ -816,6 +816,37 @@ export const adMetrics = defineTable({
   .index("by_ad", ["adId"])
   .index("by_ad_and_date", ["adId", "dateBucket"]);
 
+// Weekly ad placement per community. Inserted by either:
+//   - the free-tier auto-rotation cron (`placementType: "auto"`)
+//   - a paid community admin picking an ad (`placementType: "admin_pick"`)
+// `weekStart` is the Monday 00:00 UTC epoch ms for the placement week so a
+// single index query can fetch "this week's placement for community X" in
+// O(1). Computed via `_lib/time.currentMondayUTCms`.
+export const communityAdPlacements = defineTable({
+  communityId: v.id("communities"),
+  adId: v.id("ads"),
+  weekStart: v.number(),
+  placementType: v.union(v.literal("auto"), v.literal("admin_pick")),
+  selectedBy: v.optional(v.id("users")),
+  createdAt: v.number(),
+})
+  .index("by_community_and_week", ["communityId", "weekStart"])
+  .index("by_week", ["weekStart"]);
+
+// Coupons saved by a viewer from a community ad surface. `usedAt` flips
+// the row into the "used" state so the viewer can distinguish saved-but-
+// pending coupons from ones they've already redeemed. Dedupe is enforced
+// at the mutation layer via the `by_user_and_ad` index.
+export const savedCoupons = defineTable({
+  userId: v.id("users"),
+  adId: v.id("ads"),
+  couponCode: v.string(),
+  savedAt: v.number(),
+  usedAt: v.optional(v.number()),
+})
+  .index("by_user", ["userId"])
+  .index("by_user_and_ad", ["userId", "adId"]);
+
 export default defineSchema({
   users,
   friends,
@@ -848,4 +879,6 @@ export default defineSchema({
   orgChannelMessages,
   ads,
   adMetrics,
+  communityAdPlacements,
+  savedCoupons,
 });

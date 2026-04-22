@@ -55,6 +55,7 @@ import {
   Bell,
   LogOut,
   MessageSquare,
+  TicketIcon,
 } from "lucide-react"
 
 import Link from "next/link"
@@ -89,6 +90,11 @@ const data = {
       title: "Businesses",
       url: "/dashboard/businesses",
       icon: <Building2Icon />,
+    },
+    {
+      title: "My Coupons",
+      url: "/dashboard/my-coupons",
+      icon: <TicketIcon />,
     },
     {
       title: "Profile",
