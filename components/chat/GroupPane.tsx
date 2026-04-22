@@ -50,6 +50,12 @@ import {
 import { AgentResponseCard } from "@/components/chat/AgentResponseCard"
 import { GroupInfoDrawer } from "@/components/chat/GroupInfoDrawer"
 import { useMutation } from "convex/react"
+import {
+  CollapseButton,
+  ColumnHeader,
+  ResizeHandle,
+  useResizableWidth,
+} from "@/components/dashboard-layout"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -170,14 +176,26 @@ export function GroupPane() {
     setActiveGroupId(groups[0].group._id)
   }, [groups, activeGroupId])
 
+  const listColumn = useResizableWidth({
+    initial: 300,
+    min: 240,
+    max: 520,
+    side: "right",
+  })
+  const [drawerOpen, setDrawerOpen] = React.useState(true)
+
   if (!clerkLoaded) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+    return <div className="flex-1 p-6 text-sm text-muted-foreground">Loading…</div>
   }
   if (activeUser.isDevMode && !activeUser.devUserId) {
-    return <PickDevUserEmptyState pageName="group chats" />
+    return (
+      <div className="flex-1 overflow-auto">
+        <PickDevUserEmptyState pageName="group chats" />
+      </div>
+    )
   }
   if (!viewerId) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+    return <div className="flex-1 p-6 text-sm text-muted-foreground">Loading…</div>
   }
 
   const filteredGroups = (groups ?? []).filter(({ group }) => {
@@ -188,35 +206,40 @@ export function GroupPane() {
   })
 
   return (
-    <div className="flex gap-4 h-[calc(100vh-220px)]">
-      {/* ─── Groups sidebar ─── */}
-      <div className="w-72 border rounded-lg bg-card flex flex-col overflow-hidden">
-        <div className="p-4 border-b shrink-0 flex items-center justify-between">
-          <h3 className="font-semibold">Groups</h3>
-          <NewGroupDialog
-            viewerId={viewerId}
-            onCreated={(id) => setActiveGroupId(id)}
-          />
-        </div>
-        <div className="p-2 border-b shrink-0">
+    <div className="flex min-h-0 flex-1">
+      {/* ─── Groups column ─── */}
+      <div
+        className="flex min-h-0 shrink-0 flex-col bg-background"
+        style={{ width: `${listColumn.width}px` }}
+      >
+        <ColumnHeader
+          title="Groups"
+          actions={
+            <NewGroupDialog
+              viewerId={viewerId}
+              onCreated={(id) => setActiveGroupId(id)}
+            />
+          }
+        />
+        <div className="shrink-0 border-b p-2">
           <div className="relative">
-            <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground" />
+            <SearchIcon className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Search groups…"
-              className="pl-8 h-8 text-sm"
+              className="h-8 pl-8 text-sm"
               value={sidebarFilter}
               onChange={(e) => setSidebarFilter(e.target.value)}
             />
           </div>
         </div>
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="p-2 space-y-1">
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="space-y-1 p-2">
             {groups === undefined ? (
-              <p className="text-center text-sm text-muted-foreground py-6">
+              <p className="py-6 text-center text-sm text-muted-foreground">
                 Loading…
               </p>
             ) : filteredGroups.length === 0 ? (
-              <div className="text-center text-sm text-muted-foreground py-6 px-2">
+              <div className="px-2 py-6 text-center text-sm text-muted-foreground">
                 {groups.length === 0
                   ? "No groups yet. Create one with the + button."
                   : "No match."}
@@ -237,6 +260,11 @@ export function GroupPane() {
         </ScrollArea>
       </div>
 
+      <ResizeHandle
+        onMouseDown={listColumn.onMouseDown}
+        label="Resize groups list"
+      />
+
       {/* ─── Active group pane + drawer ─── */}
       {activeGroupId ? (
         <GroupThread
@@ -249,10 +277,12 @@ export function GroupPane() {
           setReplyMode={setReplyMode}
           isAgentQuery={isAgentQuery}
           setIsAgentQuery={setIsAgentQuery}
+          drawerOpen={drawerOpen}
+          setDrawerOpen={setDrawerOpen}
           onDeleted={() => setActiveGroupId(null)}
         />
       ) : (
-        <div className="flex-1 border rounded-lg bg-card flex items-center justify-center text-muted-foreground">
+        <div className="flex flex-1 items-center justify-center bg-background text-muted-foreground">
           <p className="text-sm">Select a group to start</p>
         </div>
       )}
@@ -273,6 +303,8 @@ function GroupThread({
   setReplyMode,
   isAgentQuery,
   setIsAgentQuery,
+  drawerOpen,
+  setDrawerOpen,
   onDeleted,
 }: {
   groupChatId: Id<"groupChats">
@@ -283,8 +315,16 @@ function GroupThread({
   setReplyMode: (m: ReplyMode) => void
   isAgentQuery: boolean
   setIsAgentQuery: (v: boolean) => void
+  drawerOpen: boolean
+  setDrawerOpen: (v: boolean) => void
   onDeleted: () => void
 }) {
+  const drawerColumn = useResizableWidth({
+    initial: 340,
+    min: 280,
+    max: 560,
+    side: "left",
+  })
   const { isDevMode, devUserId } = useActiveUser()
   const identityArgs = isDevMode ? (devUserId ? { devUserId } : null) : {}
 
@@ -349,9 +389,14 @@ function GroupThread({
   )
 
   React.useEffect(() => {
-    if (!groupChatId) return
+    // Guard on viewerId so we don't fire the mutation before dev-mode
+    // identity has been resolved. Without this, the first few renders call
+    // `markRead({ groupChatId })` with no `devUserId` merged in (because
+    // useIdentifiedMutation pulls identity from useActiveUser, which resolves
+    // asynchronously from localStorage) and Convex throws "Not authenticated".
+    if (!groupChatId || !viewerId) return
     markRead({ groupChatId }).catch(() => {})
-  }, [groupChatId, messages, markRead])
+  }, [groupChatId, viewerId, messages, markRead])
 
   const messagesEndRef = React.useRef<HTMLDivElement | null>(null)
   React.useEffect(() => {
@@ -417,14 +462,14 @@ function GroupThread({
 
   if (groupInfo === undefined) {
     return (
-      <div className="flex-1 border rounded-lg bg-card flex items-center justify-center text-muted-foreground">
+      <div className="flex flex-1 items-center justify-center bg-background text-muted-foreground">
         <p className="text-sm">Loading group…</p>
       </div>
     )
   }
   if (!groupInfo) {
     return (
-      <div className="flex-1 border rounded-lg bg-card flex items-center justify-center text-muted-foreground">
+      <div className="flex flex-1 items-center justify-center bg-background text-muted-foreground">
         <p className="text-sm">Group unavailable</p>
       </div>
     )
@@ -434,45 +479,63 @@ function GroupThread({
 
   return (
     <>
-      <div className="flex-1 border rounded-lg bg-card flex flex-col overflow-hidden">
-        <div className="p-4 border-b flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-violet-400 to-indigo-600 flex items-center justify-center text-white">
-            <UsersRoundIcon className="size-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="font-semibold truncate">{group.name}</p>
-            <p className="text-xs text-muted-foreground truncate">
-              {group.memberCount} member{group.memberCount === 1 ? "" : "s"}
-              {myRole === "admin" && " · you are admin"}
-            </p>
-          </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() =>
-              setDrawerMode(drawerMode === "info" ? "homie" : "info")
-            }
-          >
-            <InfoIcon className="size-4" />
-          </Button>
-          <GroupHeaderMenu
-            groupChatId={groupChatId}
-            isAdmin={myRole === "admin"}
-            memberCount={group.memberCount}
-            onAddMember={() => setAddMemberOpen(true)}
-            onViewMembers={() => setDrawerMode("info")}
-            onDeleted={onDeleted}
-          />
-        </div>
+      <div className="flex min-h-0 flex-1 flex-col bg-background">
+        <ColumnHeader
+          title={
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-violet-400 to-indigo-600 text-white">
+                <UsersRoundIcon className="size-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold leading-tight">
+                  {group.name}
+                </p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {group.memberCount} member
+                  {group.memberCount === 1 ? "" : "s"}
+                  {myRole === "admin" && " · you are admin"}
+                </p>
+              </div>
+            </div>
+          }
+          actions={
+            <>
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() =>
+                  setDrawerMode(drawerMode === "info" ? "homie" : "info")
+                }
+                aria-label="Toggle group info / Homie drawer mode"
+              >
+                <InfoIcon className="size-4" />
+              </Button>
+              <GroupHeaderMenu
+                groupChatId={groupChatId}
+                isAdmin={myRole === "admin"}
+                memberCount={group.memberCount}
+                onAddMember={() => setAddMemberOpen(true)}
+                onViewMembers={() => setDrawerMode("info")}
+                onDeleted={onDeleted}
+              />
+              <CollapseButton
+                side="right"
+                open={drawerOpen}
+                onToggle={() => setDrawerOpen(!drawerOpen)}
+                label={drawerOpen ? "Hide group drawer" : "Show group drawer"}
+              />
+            </>
+          }
+        />
 
-        <ScrollArea className="flex-1">
-          <div className="p-4 space-y-3">
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="space-y-3 p-4">
             {messages === undefined ? (
-              <p className="text-center text-sm text-muted-foreground py-6">
+              <p className="py-6 text-center text-sm text-muted-foreground">
                 Loading…
               </p>
             ) : messages.length === 0 ? (
-              <div className="text-center text-sm text-muted-foreground py-6">
+              <div className="py-6 text-center text-sm text-muted-foreground">
                 No messages yet. Say hi 👋
               </div>
             ) : (
@@ -490,7 +553,7 @@ function GroupThread({
           </div>
         </ScrollArea>
 
-        <div className="p-4 border-t space-y-2">
+        <div className="shrink-0 space-y-2 border-t p-4">
           {isAgentQuery && (
             <ReplyModePill
               mode={replyMode}
@@ -511,78 +574,95 @@ function GroupThread({
         </div>
       </div>
 
-      {/* ─── Right drawer ─── */}
-      <div className="w-80 border rounded-lg bg-card flex flex-col overflow-hidden">
-        <div className="p-2 border-b shrink-0 flex gap-1">
-          <Button
-            size="sm"
-            variant={drawerMode === "homie" ? "default" : "ghost"}
-            className="flex-1"
-            onClick={() => setDrawerMode("homie")}
-          >
-            <BotIcon className="size-3.5 mr-1" />
-            Homie
-          </Button>
-          <Button
-            size="sm"
-            variant={drawerMode === "info" ? "default" : "ghost"}
-            className="flex-1"
-            onClick={() => setDrawerMode("info")}
-          >
-            <UsersIcon className="size-3.5 mr-1" />
-            Group info
-          </Button>
-        </div>
-
-        {drawerMode === "homie" ? (
-          <ScrollArea className="flex-1">
-            <div className="p-3 space-y-3">
-              {pendingAgentResponses.length === 0 ? (
-                <div className="text-center text-xs text-muted-foreground py-8 px-2">
-                  Tag{" "}
-                  <code className="px-1 bg-muted rounded">@homie</code> in
-                  the composer to ask the group agent. Press{" "}
-                  <kbd className="px-1 bg-muted rounded">Tab</kbd> to switch
-                  between a private reply and a group-visible one.
-                </div>
-              ) : (
-                pendingAgentResponses.map((r) => (
-                  <AgentResponseCard
-                    key={r._id}
-                    response={{
-                      _id: r._id,
-                      query: r.query,
-                      content: r.content,
-                      status: r.status,
-                      error: r.error,
-                      skillUsed: r.skillUsed,
-                      replyMode: r.replyMode,
-                    }}
-                    actionLabel="Share with group"
-                    isGroupMode
-                    onShare={
-                      r.replyMode === "private"
-                        ? () => handleShare(r._id)
-                        : undefined
-                    }
-                    onDismiss={() => handleDismiss(r._id)}
-                  />
-                ))
-              )}
-            </div>
-          </ScrollArea>
-        ) : (
-          <GroupInfoDrawer
-            groupChatId={groupChatId}
-            members={members}
-            myRole={myRole}
-            myUserId={myUserId}
-            memberCount={group.memberCount}
-            onAddMemberClick={() => setAddMemberOpen(true)}
-            onDeleted={onDeleted}
+      {/* ─── Right drawer (collapsible + resizable) ─── */}
+      {drawerOpen ? (
+        <>
+          <ResizeHandle
+            onMouseDown={drawerColumn.onMouseDown}
+            label="Resize group drawer"
           />
-        )}
-      </div>
+          <div
+            className="flex min-h-0 shrink-0 flex-col border-l bg-background"
+            style={{ width: `${drawerColumn.width}px` }}
+          >
+            <div className="flex shrink-0 gap-1 border-b p-2">
+              <Button
+                size="sm"
+                variant={drawerMode === "homie" ? "default" : "ghost"}
+                className="flex-1"
+                onClick={() => setDrawerMode("homie")}
+              >
+                <BotIcon className="mr-1 size-3.5" />
+                Homie
+              </Button>
+              <Button
+                size="sm"
+                variant={drawerMode === "info" ? "default" : "ghost"}
+                className="flex-1"
+                onClick={() => setDrawerMode("info")}
+              >
+                <UsersIcon className="mr-1 size-3.5" />
+                Group info
+              </Button>
+              <CollapseButton
+                side="right"
+                open={drawerOpen}
+                onToggle={() => setDrawerOpen(false)}
+                label="Hide group drawer"
+              />
+            </div>
+
+            {drawerMode === "homie" ? (
+              <ScrollArea className="min-h-0 flex-1">
+                <div className="space-y-3 p-3">
+                  {pendingAgentResponses.length === 0 ? (
+                    <div className="px-2 py-8 text-center text-xs text-muted-foreground">
+                      Tag{" "}
+                      <code className="rounded bg-muted px-1">@homie</code> in
+                      the composer to ask the group agent. Press{" "}
+                      <kbd className="rounded bg-muted px-1">Tab</kbd> to
+                      switch between a private reply and a group-visible one.
+                    </div>
+                  ) : (
+                    pendingAgentResponses.map((r) => (
+                      <AgentResponseCard
+                        key={r._id}
+                        response={{
+                          _id: r._id,
+                          query: r.query,
+                          content: r.content,
+                          status: r.status,
+                          error: r.error,
+                          skillUsed: r.skillUsed,
+                          replyMode: r.replyMode,
+                        }}
+                        actionLabel="Share with group"
+                        isGroupMode
+                        onShare={
+                          r.replyMode === "private"
+                            ? () => handleShare(r._id)
+                            : undefined
+                        }
+                        onDismiss={() => handleDismiss(r._id)}
+                      />
+                    ))
+                  )}
+                </div>
+              </ScrollArea>
+            ) : (
+              <GroupInfoDrawer
+                groupChatId={groupChatId}
+                members={members}
+                myRole={myRole}
+                myUserId={myUserId}
+                memberCount={group.memberCount}
+                onAddMemberClick={() => setAddMemberOpen(true)}
+                onDeleted={onDeleted}
+              />
+            )}
+          </div>
+        </>
+      ) : null}
 
       <AddMemberDialog
         open={addMemberOpen}

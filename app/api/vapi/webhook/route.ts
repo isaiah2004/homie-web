@@ -3,7 +3,19 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 
-const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+// Lazy-init so Next.js build-time page-data collection (which imports this
+// module to discover its route exports) doesn't blow up when the Convex URL
+// env var isn't set at build time. The URL is only actually needed inside
+// the POST handler at request time.
+function getConvex(): ConvexHttpClient {
+  const url = process.env.NEXT_PUBLIC_CONVEX_URL;
+  if (!url) {
+    throw new Error(
+      "NEXT_PUBLIC_CONVEX_URL is not set — Vapi webhook cannot reach Convex.",
+    );
+  }
+  return new ConvexHttpClient(url);
+}
 
 const VALID_TOOLS = new Set([
   "findFriendPlaces",
@@ -57,6 +69,7 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  const convex = getConvex();
   const results = await Promise.all(
     rawCalls.map(async (tc) => {
       const toolName = tc.function?.name ?? tc.name;

@@ -18,6 +18,7 @@ import type * as ai from "../ai.js";
 import type * as attachments from "../attachments.js";
 import type * as billing from "../billing.js";
 import type * as businessMembers from "../businessMembers.js";
+import type * as businessProfile from "../businessProfile.js";
 import type * as businesses from "../businesses.js";
 import type * as cheapShark from "../cheapShark.js";
 import type * as communities from "../communities.js";
@@ -74,6 +75,7 @@ declare const fullApi: ApiFromModules<{
   attachments: typeof attachments;
   billing: typeof billing;
   businessMembers: typeof businessMembers;
+  businessProfile: typeof businessProfile;
   businesses: typeof businesses;
   cheapShark: typeof cheapShark;
   communities: typeof communities;

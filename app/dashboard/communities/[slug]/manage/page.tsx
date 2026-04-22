@@ -22,6 +22,7 @@ import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { AdCard } from "@/components/ad-card"
 import { SiteHeader } from "@/components/site-header"
+import { PageShell } from "@/components/dashboard-layout"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -121,35 +122,39 @@ export default function Page() {
 
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
-      <div>
-        <SiteHeader pageName="Manage community" />
-        <PickDevUserEmptyState pageName="communities" />
-      </div>
+      <PageShell header={<SiteHeader pageName="Manage community" />}>
+        <div className="flex-1 overflow-auto">
+          <PickDevUserEmptyState pageName="communities" />
+        </div>
+      </PageShell>
     )
   }
 
   if (community === undefined || viewerData === undefined) {
     return (
-      <div>
-        <SiteHeader pageName="Manage community" />
-        <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-      </div>
+      <PageShell header={<SiteHeader pageName="Manage community" />}>
+        <div className="flex-1 overflow-auto">
+          <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+        </div>
+      </PageShell>
     )
   }
   if (community === null || viewerData === null) {
     return (
-      <div>
-        <SiteHeader pageName="Manage community" />
-        <NotAllowed />
-      </div>
+      <PageShell header={<SiteHeader pageName="Manage community" />}>
+        <div className="flex-1 overflow-auto">
+          <NotAllowed />
+        </div>
+      </PageShell>
     )
   }
   if (!isAdmin) {
     return (
-      <div>
-        <SiteHeader pageName="Manage community" />
-        <NotAllowed />
-      </div>
+      <PageShell header={<SiteHeader pageName="Manage community" />}>
+        <div className="flex-1 overflow-auto">
+          <NotAllowed />
+        </div>
+      </PageShell>
     )
   }
 
@@ -200,9 +205,8 @@ export default function Page() {
   }
 
   return (
-    <div>
-      <SiteHeader pageName="Manage community" />
-      <div className="flex flex-1 flex-col">
+    <PageShell header={<SiteHeader pageName="Manage community" />}>
+      <div className="flex-1 flex flex-col min-w-0 overflow-auto">
         <div className="@container/main mx-auto w-full max-w-3xl flex-1 p-4 md:p-6">
           <Button variant="ghost" size="sm" asChild className="mb-3">
             <Link href={`/dashboard/communities/${slug}`}>
@@ -423,7 +427,7 @@ export default function Page() {
           </p>
         </div>
       </div>
-    </div>
+    </PageShell>
   )
 }
 

@@ -9,6 +9,13 @@ import { api } from "@/convex/_generated/api"
 import { Doc, Id } from "@/convex/_generated/dataModel"
 import { useActiveUser } from "@/hooks/use-active-user"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
+import {
+  CollapseButton,
+  ColumnHeader,
+  PageShell,
+  ResizeHandle,
+  useResizableWidth,
+} from "@/components/dashboard-layout"
 
 import { SiteHeader } from "@/components/site-header"
 import { Badge } from "@/components/ui/badge"
@@ -104,7 +111,7 @@ function UserProfilePane({
 
   if (!selected || !selected.user) {
     return (
-      <div className="h-full flex items-center justify-center text-muted-foreground p-6 text-center">
+      <div className="flex h-full items-center justify-center p-6 text-center text-muted-foreground">
         <p className="text-sm">
           Hover or select a user to view their profile
         </p>
@@ -122,14 +129,14 @@ function UserProfilePane({
 
   return (
     <ScrollArea className="h-full">
-      <div className="p-6 space-y-6">
+      <div className="space-y-6 p-6">
         <div className="text-center">
-          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white text-2xl font-semibold mx-auto mb-3">
+          <div className="mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-purple-600 text-2xl font-semibold text-white">
             {initials(shownName)}
           </div>
           <h3 className="text-xl font-semibold">{shownName}</h3>
           {shownLocation && (
-            <div className="flex items-center justify-center gap-1 text-sm text-muted-foreground mt-1">
+            <div className="mt-1 flex items-center justify-center gap-1 text-sm text-muted-foreground">
               <MapPinIcon className="size-3" />
               {shownLocation}
             </div>
@@ -140,14 +147,14 @@ function UserProfilePane({
 
         {shownBio && (
           <div>
-            <h4 className="text-sm font-medium mb-2">About</h4>
+            <h4 className="mb-2 text-sm font-medium">About</h4>
             <p className="text-sm text-muted-foreground">{shownBio}</p>
           </div>
         )}
 
         {shownInterests.length > 0 && (
           <div>
-            <h4 className="text-sm font-medium mb-2">Interests</h4>
+            <h4 className="mb-2 text-sm font-medium">Interests</h4>
             <div className="flex flex-wrap gap-2">
               {shownInterests.map((interest, idx) => (
                 <Badge key={idx} variant="outline" className="text-xs">
@@ -184,13 +191,18 @@ function UserProfilePane({
           {tier ? (
             <Button asChild className="w-full" size="sm">
               <Link href={`/dashboard/chats?with=${selected.user._id}`}>
-                <MessageCircleIcon className="size-4 mr-2" />
+                <MessageCircleIcon className="mr-2 size-4" />
                 Send Message
               </Link>
             </Button>
           ) : (
-            <Button className="w-full" size="sm" disabled title="Become friends first">
-              <MessageCircleIcon className="size-4 mr-2" />
+            <Button
+              className="w-full"
+              size="sm"
+              disabled
+              title="Become friends first"
+            >
+              <MessageCircleIcon className="mr-2 size-4" />
               Send Message
             </Button>
           )}
@@ -270,6 +282,24 @@ export default function Page() {
   const [closeSearch, setCloseSearch] = React.useState("")
   const [friendsSearch, setFriendsSearch] = React.useState("")
   const [addSearch, setAddSearch] = React.useState("")
+
+  // Right-side profile pane is collapsible + resizable, matching the Homie
+  // drawer on /chats. On the Friends tab we also make the Close Friends
+  // column independently resizable — All Friends in the middle keeps
+  // `flex-1` and absorbs the remaining width.
+  const closeFriendsColumn = useResizableWidth({
+    initial: 380,
+    min: 260,
+    max: 560,
+    side: "right",
+  })
+  const profilePane = useResizableWidth({
+    initial: 340,
+    min: 280,
+    max: 520,
+    side: "left",
+  })
+  const [profileOpen, setProfileOpen] = React.useState(true)
 
   const closeFriends = React.useMemo<FriendEdge[]>(
     () => (friends ?? []).filter((f) => f.edge.tier === "close"),
@@ -383,353 +413,447 @@ export default function Page() {
     }
   }
 
+  const headerNode = (
+    <SiteHeader
+      pageName="Friends"
+      centerSlot={
+        <TabsList className="h-9">
+          <TabsTrigger value="close-friends">Friends</TabsTrigger>
+          <TabsTrigger value="friend-requests">
+            Requests
+            {incoming && incoming.length > 0 && (
+              <Badge variant="destructive" className="ml-2">
+                {incoming.length}
+              </Badge>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="add-friends">Add Friends</TabsTrigger>
+        </TabsList>
+      }
+      rightSlot={
+        <CollapseButton
+          side="right"
+          open={profileOpen}
+          onToggle={() => setProfileOpen((v) => !v)}
+          label={profileOpen ? "Hide profile pane" : "Show profile pane"}
+        />
+      }
+    />
+  )
+
   // Loading shell while Clerk + Convex resolve the viewer.
   if (!clerkLoaded) {
     return (
-      <div>
-        <SiteHeader pageName="Friends" />
-        <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-      </div>
+      <PageShell header={<SiteHeader pageName="Friends" />}>
+        <div className="flex-1 p-6 text-sm text-muted-foreground">
+          Loading…
+        </div>
+      </PageShell>
     )
   }
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
-      <div>
-        <SiteHeader pageName="Friends" />
-        <PickDevUserEmptyState pageName="friends" />
-      </div>
+      <PageShell header={<SiteHeader pageName="Friends" />}>
+        <div className="flex-1 overflow-auto">
+          <PickDevUserEmptyState pageName="friends" />
+        </div>
+      </PageShell>
     )
   }
   if (!viewerId || me === undefined) {
     return (
-      <div>
-        <SiteHeader pageName="Friends" />
-        <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-      </div>
+      <PageShell header={<SiteHeader pageName="Friends" />}>
+        <div className="flex-1 p-6 text-sm text-muted-foreground">
+          Loading…
+        </div>
+      </PageShell>
     )
   }
 
+  // The right-hand profile pane (shared across all three tabs). Rendered once
+  // to the right of the TabsContent so collapsing it affects every tab.
+  const profileDrawer =
+    profileOpen ? (
+      <>
+        <ResizeHandle
+          onMouseDown={profilePane.onMouseDown}
+          label="Resize profile pane"
+        />
+        <div
+          className="flex min-h-0 shrink-0 flex-col bg-background"
+          style={{ width: `${profilePane.width}px` }}
+        >
+          <ColumnHeader
+            title="Profile"
+            actions={
+              <CollapseButton
+                side="right"
+                open={profileOpen}
+                onToggle={() => setProfileOpen(false)}
+                label="Hide profile pane"
+              />
+            }
+          />
+          <div className="min-h-0 flex-1">
+            <UserProfilePane viewerId={viewerId} selected={selected} />
+          </div>
+        </div>
+      </>
+    ) : null
+
   return (
-    <div>
-      <SiteHeader pageName="Friends" />
-      <div className="flex flex-1 flex-col">
-        <div className="@container/main flex flex-1 flex-col p-4 md:p-6">
-          <Tabs
-            value={activeTab}
-            onValueChange={setActiveTab}
-            className="flex-1"
-          >
-            <TabsList className="w-fit mb-4">
-              <TabsTrigger value="close-friends">Friends</TabsTrigger>
-              <TabsTrigger value="friend-requests">
-                Requests
-                {incoming && incoming.length > 0 && (
-                  <Badge variant="destructive" className="ml-2">
-                    {incoming.length}
-                  </Badge>
+    <Tabs
+      value={activeTab}
+      onValueChange={setActiveTab}
+      // `gap-0` overrides Tabs' default `gap-2` so the SiteHeader's border-b
+      // sits flush against the column content below (matches /dashboard/homie).
+      className="flex h-[calc(100vh-1rem)] flex-col gap-0"
+    >
+      {headerNode}
+
+      {/* ─── Close Friends + All Friends ─── */}
+      <TabsContent
+        value="close-friends"
+        className="m-0 flex min-h-0 flex-1 overflow-hidden"
+      >
+        <FriendsSplitColumn
+          leftWidth={closeFriendsColumn.width}
+          onLeftResize={closeFriendsColumn.onMouseDown}
+          leftTitle={
+            <span className="flex items-center gap-2">
+              <HeartIcon className="size-4 text-pink-500" />
+              Close Friends
+            </span>
+          }
+          leftSearch={closeSearch}
+          onLeftSearchChange={setCloseSearch}
+          leftPlaceholder="Search close friends…"
+          leftEmpty={
+            closeSearch ? "No matches" : "No close friends yet"
+          }
+          leftLoading={friends === undefined}
+          leftRows={filteredClose.map(({ edge, friend }) =>
+            friend ? (
+              <FriendRow
+                key={edge._id}
+                user={friend}
+                tier="close"
+                onSelect={() =>
+                  setSelected({ user: friend, tier: "close" })
+                }
+                actionIcon={<ChevronRightIcon className="size-4" />}
+                onAction={() => handleToggleClose(friend._id, false)}
+                actionLabel="Demote to friend"
+                onRemove={() => handleRemove(friend._id)}
+              />
+            ) : null,
+          )}
+          rightTitle="All Friends"
+          rightSearch={friendsSearch}
+          onRightSearchChange={setFriendsSearch}
+          rightPlaceholder="Search friends…"
+          rightEmpty={friendsSearch ? "No matches" : "No other friends"}
+          rightLoading={friends === undefined}
+          rightRows={filteredRegular.map(({ edge, friend }) =>
+            friend ? (
+              <FriendRow
+                key={edge._id}
+                user={friend}
+                tier="friend"
+                onSelect={() =>
+                  setSelected({ user: friend, tier: "friend" })
+                }
+                actionIcon={<ChevronLeftIcon className="size-4" />}
+                onAction={() => handleToggleClose(friend._id, true)}
+                actionLabel="Promote to close friend"
+                onRemove={() => handleRemove(friend._id)}
+              />
+            ) : null,
+          )}
+        />
+        {profileDrawer}
+      </TabsContent>
+
+      {/* ─── Requests ─── */}
+      <TabsContent
+        value="friend-requests"
+        className="m-0 flex min-h-0 flex-1 overflow-hidden"
+      >
+        <div className="flex min-h-0 flex-1 flex-col bg-background">
+          <ColumnHeader
+            title="Friend Requests"
+            actions={
+              <p className="text-xs text-muted-foreground">
+                {incoming?.length ?? 0} incoming ·{" "}
+                {outgoing?.length ?? 0} outgoing
+              </p>
+            }
+          />
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="space-y-6 p-4">
+              <section>
+                <h4 className="mb-3 text-sm font-medium text-muted-foreground">
+                  Incoming
+                </h4>
+                {incoming === undefined ? (
+                  <p className="text-sm text-muted-foreground">Loading…</p>
+                ) : incoming.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No incoming requests
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {incoming.map(({ edge, friend }) =>
+                      friend ? (
+                        <RequestCard
+                          key={edge._id}
+                          user={friend}
+                          onSelect={() => setSelected({ user: friend })}
+                          primary={{
+                            label: "Accept",
+                            icon: <CheckIcon className="mr-1 size-3" />,
+                            onClick: () => handleAccept(friend._id),
+                          }}
+                          secondary={{
+                            label: "Decline",
+                            icon: <XIcon className="mr-1 size-3" />,
+                            onClick: () => handleDecline(friend._id),
+                          }}
+                        />
+                      ) : null,
+                    )}
+                  </div>
                 )}
-              </TabsTrigger>
-              <TabsTrigger value="add-friends">Add Friends</TabsTrigger>
-            </TabsList>
+              </section>
 
-            <div className="flex gap-4 h-[calc(100vh-200px)]">
-              {/* ─── Friends / Close Friends tab ─── */}
-              <TabsContent
-                value="close-friends"
-                className="flex-1 flex gap-4 m-0"
-              >
-                <div className="flex-1 flex gap-4">
-                  {/* Close Friends column */}
-                  <div className="flex-1 border rounded-lg bg-card flex flex-col">
-                    <div className="p-4 border-b">
-                      <h3 className="font-semibold mb-3 flex items-center gap-2">
-                        <HeartIcon className="size-4 text-pink-500" />
-                        Close Friends
-                      </h3>
-                      <div className="relative">
-                        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                        <Input
-                          placeholder="Search close friends…"
-                          className="pl-9"
-                          value={closeSearch}
-                          onChange={(e) => setCloseSearch(e.target.value)}
+              <section>
+                <h4 className="mb-3 text-sm font-medium text-muted-foreground">
+                  Outgoing
+                </h4>
+                {outgoing === undefined ? (
+                  <p className="text-sm text-muted-foreground">Loading…</p>
+                ) : outgoing.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No outgoing requests
+                  </p>
+                ) : (
+                  <div className="space-y-3">
+                    {outgoing.map(({ edge, friend }) =>
+                      friend ? (
+                        <RequestCard
+                          key={edge._id}
+                          user={friend}
+                          onSelect={() => setSelected({ user: friend })}
+                          secondary={{
+                            label: "Cancel",
+                            icon: <XIcon className="mr-1 size-3" />,
+                            onClick: () => handleCancel(friend._id),
+                          }}
                         />
-                      </div>
-                    </div>
-                    <ScrollArea className="flex-1">
-                      <div className="p-2 space-y-1">
-                        {friends === undefined ? (
-                          <p className="text-center text-muted-foreground py-4 text-sm">
-                            Loading…
-                          </p>
-                        ) : filteredClose.length === 0 ? (
-                          <p className="text-center text-muted-foreground py-4 text-sm">
-                            {closeSearch
-                              ? "No matches"
-                              : "No close friends yet"}
-                          </p>
-                        ) : (
-                          filteredClose.map(({ edge, friend }) =>
-                            friend ? (
-                              <FriendRow
-                                key={edge._id}
-                                user={friend}
-                                tier="close"
-                                onSelect={() =>
-                                  setSelected({ user: friend, tier: "close" })
-                                }
-                                actionIcon={
-                                  <ChevronRightIcon className="size-4" />
-                                }
-                                onAction={() =>
-                                  handleToggleClose(friend._id, false)
-                                }
-                                actionLabel="Demote to friend"
-                                onRemove={() => handleRemove(friend._id)}
-                              />
-                            ) : null,
-                          )
-                        )}
-                      </div>
-                    </ScrollArea>
+                      ) : null,
+                    )}
                   </div>
-
-                  {/* All Friends column */}
-                  <div className="flex-1 border rounded-lg bg-card flex flex-col">
-                    <div className="p-4 border-b">
-                      <h3 className="font-semibold mb-3">All Friends</h3>
-                      <div className="relative">
-                        <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                        <Input
-                          placeholder="Search friends…"
-                          className="pl-9"
-                          value={friendsSearch}
-                          onChange={(e) => setFriendsSearch(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <ScrollArea className="flex-1">
-                      <div className="p-2 space-y-1">
-                        {friends === undefined ? (
-                          <p className="text-center text-muted-foreground py-4 text-sm">
-                            Loading…
-                          </p>
-                        ) : filteredRegular.length === 0 ? (
-                          <p className="text-center text-muted-foreground py-4 text-sm">
-                            {friendsSearch ? "No matches" : "No other friends"}
-                          </p>
-                        ) : (
-                          filteredRegular.map(({ edge, friend }) =>
-                            friend ? (
-                              <FriendRow
-                                key={edge._id}
-                                user={friend}
-                                tier="friend"
-                                onSelect={() =>
-                                  setSelected({ user: friend, tier: "friend" })
-                                }
-                                actionIcon={
-                                  <ChevronLeftIcon className="size-4" />
-                                }
-                                onAction={() =>
-                                  handleToggleClose(friend._id, true)
-                                }
-                                actionLabel="Promote to close friend"
-                                onRemove={() => handleRemove(friend._id)}
-                              />
-                            ) : null,
-                          )
-                        )}
-                      </div>
-                    </ScrollArea>
-                  </div>
-                </div>
-
-                <div className="w-80 border rounded-lg bg-card">
-                  <UserProfilePane
-                    viewerId={viewerId}
-                    selected={selected}
-                  />
-                </div>
-              </TabsContent>
-
-              {/* ─── Friend Requests tab ─── */}
-              <TabsContent
-                value="friend-requests"
-                className="flex-1 flex gap-4 m-0"
-              >
-                <div className="flex-1 border rounded-lg bg-card flex flex-col">
-                  <div className="p-4 border-b">
-                    <h3 className="font-semibold">Friend Requests</h3>
-                    <p className="text-sm text-muted-foreground">
-                      {incoming?.length ?? 0} incoming ·{" "}
-                      {outgoing?.length ?? 0} outgoing
-                    </p>
-                  </div>
-                  <ScrollArea className="flex-1">
-                    <div className="p-4 space-y-6">
-                      <section>
-                        <h4 className="text-sm font-medium mb-3 text-muted-foreground">
-                          Incoming
-                        </h4>
-                        {incoming === undefined ? (
-                          <p className="text-sm text-muted-foreground">
-                            Loading…
-                          </p>
-                        ) : incoming.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">
-                            No incoming requests
-                          </p>
-                        ) : (
-                          <div className="space-y-3">
-                            {incoming.map(({ edge, friend }) =>
-                              friend ? (
-                                <RequestCard
-                                  key={edge._id}
-                                  user={friend}
-                                  onSelect={() =>
-                                    setSelected({ user: friend })
-                                  }
-                                  primary={{
-                                    label: "Accept",
-                                    icon: (
-                                      <CheckIcon className="size-3 mr-1" />
-                                    ),
-                                    onClick: () => handleAccept(friend._id),
-                                  }}
-                                  secondary={{
-                                    label: "Decline",
-                                    icon: <XIcon className="size-3 mr-1" />,
-                                    onClick: () => handleDecline(friend._id),
-                                  }}
-                                />
-                              ) : null,
-                            )}
-                          </div>
-                        )}
-                      </section>
-
-                      <section>
-                        <h4 className="text-sm font-medium mb-3 text-muted-foreground">
-                          Outgoing
-                        </h4>
-                        {outgoing === undefined ? (
-                          <p className="text-sm text-muted-foreground">
-                            Loading…
-                          </p>
-                        ) : outgoing.length === 0 ? (
-                          <p className="text-sm text-muted-foreground">
-                            No outgoing requests
-                          </p>
-                        ) : (
-                          <div className="space-y-3">
-                            {outgoing.map(({ edge, friend }) =>
-                              friend ? (
-                                <RequestCard
-                                  key={edge._id}
-                                  user={friend}
-                                  onSelect={() =>
-                                    setSelected({ user: friend })
-                                  }
-                                  secondary={{
-                                    label: "Cancel",
-                                    icon: <XIcon className="size-3 mr-1" />,
-                                    onClick: () => handleCancel(friend._id),
-                                  }}
-                                />
-                              ) : null,
-                            )}
-                          </div>
-                        )}
-                      </section>
-                    </div>
-                  </ScrollArea>
-                </div>
-
-                <div className="w-80 border rounded-lg bg-card">
-                  <UserProfilePane
-                    viewerId={viewerId}
-                    selected={selected}
-                  />
-                </div>
-              </TabsContent>
-
-              {/* ─── Add Friends tab ─── */}
-              <TabsContent
-                value="add-friends"
-                className="flex-1 flex gap-4 m-0"
-              >
-                <div className="flex-1 border rounded-lg bg-card flex flex-col">
-                  <div className="p-4 border-b">
-                    <h3 className="font-semibold mb-3">Find Friends</h3>
-                    <div className="relative">
-                      <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Search by @username…"
-                        className="pl-9"
-                        value={addSearch}
-                        onChange={(e) => setAddSearch(e.target.value)}
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      Prefix match — typing `isa` matches `isaiah_m`. Usernames
-                      are your Clerk handle.
-                    </p>
-                  </div>
-                  <ScrollArea className="flex-1">
-                    <div className="p-4 space-y-3">
-                      {!searchPrefix ? (
-                        <div className="text-center text-muted-foreground py-8">
-                          <SearchIcon className="size-8 mx-auto mb-2 opacity-50" />
-                          <p>Start typing a username</p>
-                        </div>
-                      ) : searchResults === undefined ? (
-                        <p className="text-center text-sm text-muted-foreground py-8">
-                          Searching…
-                        </p>
-                      ) : searchResults.length === 0 ? (
-                        <div className="text-center text-muted-foreground py-8">
-                          <p className="text-sm">
-                            No users matching “{searchPrefix}”
-                          </p>
-                        </div>
-                      ) : (
-                        searchResults.map((result) => {
-                          const state = friendIds.has(result._id)
-                            ? "friend"
-                            : outgoingIds.has(result._id)
-                            ? "outgoing"
-                            : incomingIds.has(result._id)
-                            ? "incoming"
-                            : "none"
-                          return (
-                            <SearchResultCard
-                              key={result._id}
-                              user={result}
-                              state={state}
-                              onSelect={() => setSelected({ user: result })}
-                              onSend={() => handleSendRequest(result._id)}
-                              onAccept={() => handleAccept(result._id)}
-                              onCancel={() => handleCancel(result._id)}
-                            />
-                          )
-                        })
-                      )}
-                    </div>
-                  </ScrollArea>
-                </div>
-
-                <div className="w-80 border rounded-lg bg-card">
-                  <UserProfilePane
-                    viewerId={viewerId}
-                    selected={selected}
-                  />
-                </div>
-              </TabsContent>
+                )}
+              </section>
             </div>
-          </Tabs>
+          </ScrollArea>
+        </div>
+        {profileDrawer}
+      </TabsContent>
+
+      {/* ─── Add Friends ─── */}
+      <TabsContent
+        value="add-friends"
+        className="m-0 flex min-h-0 flex-1 overflow-hidden"
+      >
+        <div className="flex min-h-0 flex-1 flex-col bg-background">
+          <ColumnHeader title="Find Friends" />
+          <div className="shrink-0 border-b p-4">
+            <div className="relative">
+              <SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search by @username…"
+                className="pl-9"
+                value={addSearch}
+                onChange={(e) => setAddSearch(e.target.value)}
+              />
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Prefix match — typing `isa` matches `isaiah_m`. Usernames are
+              your Clerk handle.
+            </p>
+          </div>
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="space-y-3 p-4">
+              {!searchPrefix ? (
+                <div className="py-8 text-center text-muted-foreground">
+                  <SearchIcon className="mx-auto mb-2 size-8 opacity-50" />
+                  <p>Start typing a username</p>
+                </div>
+              ) : searchResults === undefined ? (
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  Searching…
+                </p>
+              ) : searchResults.length === 0 ? (
+                <div className="py-8 text-center text-muted-foreground">
+                  <p className="text-sm">
+                    No users matching “{searchPrefix}”
+                  </p>
+                </div>
+              ) : (
+                searchResults.map((result) => {
+                  const state = friendIds.has(result._id)
+                    ? "friend"
+                    : outgoingIds.has(result._id)
+                      ? "outgoing"
+                      : incomingIds.has(result._id)
+                        ? "incoming"
+                        : "none"
+                  return (
+                    <SearchResultCard
+                      key={result._id}
+                      user={result}
+                      state={state}
+                      onSelect={() => setSelected({ user: result })}
+                      onSend={() => handleSendRequest(result._id)}
+                      onAccept={() => handleAccept(result._id)}
+                      onCancel={() => handleCancel(result._id)}
+                    />
+                  )
+                })
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+        {profileDrawer}
+      </TabsContent>
+    </Tabs>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Friends-tab left split (close friends | all friends)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function FriendsSplitColumn({
+  leftWidth,
+  onLeftResize,
+  leftTitle,
+  leftSearch,
+  onLeftSearchChange,
+  leftPlaceholder,
+  leftEmpty,
+  leftLoading,
+  leftRows,
+  rightTitle,
+  rightSearch,
+  onRightSearchChange,
+  rightPlaceholder,
+  rightEmpty,
+  rightLoading,
+  rightRows,
+}: {
+  leftWidth: number
+  onLeftResize: (event: React.MouseEvent) => void
+  leftTitle: React.ReactNode
+  leftSearch: string
+  onLeftSearchChange: (v: string) => void
+  leftPlaceholder: string
+  leftEmpty: string
+  leftLoading: boolean
+  leftRows: React.ReactNode
+  rightTitle: React.ReactNode
+  rightSearch: string
+  onRightSearchChange: (v: string) => void
+  rightPlaceholder: string
+  rightEmpty: string
+  rightLoading: boolean
+  rightRows: React.ReactNode
+}) {
+  return (
+    <>
+      <SplitHalf
+        title={leftTitle}
+        search={leftSearch}
+        onSearchChange={onLeftSearchChange}
+        placeholder={leftPlaceholder}
+        empty={leftEmpty}
+        loading={leftLoading}
+        rows={leftRows}
+        width={leftWidth}
+      />
+      <ResizeHandle
+        onMouseDown={onLeftResize}
+        label="Resize close friends column"
+      />
+      <SplitHalf
+        title={rightTitle}
+        search={rightSearch}
+        onSearchChange={onRightSearchChange}
+        placeholder={rightPlaceholder}
+        empty={rightEmpty}
+        loading={rightLoading}
+        rows={rightRows}
+      />
+    </>
+  )
+}
+
+// A column in the Friends split view. Pass `width` to make it a fixed-width
+// (resizable) column, omit it for the flex-1 "absorb the rest" column.
+function SplitHalf({
+  title,
+  search,
+  onSearchChange,
+  placeholder,
+  empty,
+  loading,
+  rows,
+  width,
+}: {
+  title: React.ReactNode
+  search: string
+  onSearchChange: (v: string) => void
+  placeholder: string
+  empty: string
+  loading: boolean
+  rows: React.ReactNode
+  width?: number
+}) {
+  const rowArray = React.Children.toArray(rows).filter(Boolean)
+  const isFixed = width != null
+  return (
+    <div
+      className={`flex min-h-0 flex-col bg-background ${isFixed ? "shrink-0" : "flex-1"}`}
+      style={isFixed ? { width: `${width}px` } : undefined}
+    >
+      <ColumnHeader title={title} />
+      <div className="shrink-0 border-b p-4">
+        <div className="relative">
+          <SearchIcon className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder={placeholder}
+            className="pl-9"
+            value={search}
+            onChange={(e) => onSearchChange(e.target.value)}
+          />
         </div>
       </div>
+      <ScrollArea className="min-h-0 flex-1">
+        <div className="space-y-1 p-2">
+          {loading ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              Loading…
+            </p>
+          ) : rowArray.length === 0 ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              {empty}
+            </p>
+          ) : (
+            rowArray
+          )}
+        </div>
+      </ScrollArea>
     </div>
   )
 }
@@ -761,19 +885,19 @@ function FriendRow({
       : "from-blue-400 to-purple-600"
   return (
     <div
-      className="p-3 rounded-lg border bg-card hover:bg-muted/50 transition-colors cursor-pointer"
+      className="cursor-pointer rounded-lg p-3 transition-colors hover:bg-muted/50"
       onMouseEnter={onSelect}
       onClick={onSelect}
     >
       <div className="flex items-center gap-3">
         <div
-          className={`w-10 h-10 rounded-full bg-gradient-to-br ${gradient} flex items-center justify-center text-white font-semibold flex-shrink-0`}
+          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br ${gradient} text-sm font-semibold text-white`}
         >
           {initials(user.name)}
         </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <p className="font-medium text-sm truncate">{user.name}</p>
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex items-center gap-2">
+            <p className="truncate text-sm font-medium">{user.name}</p>
             {tier === "close" && <CloseBadge />}
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -800,7 +924,7 @@ function FriendRow({
           variant="ghost"
           size="sm"
           title="Remove friend"
-          className="text-destructive hover:text-destructive hover:bg-destructive/10"
+          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
           onClick={(e) => {
             e.stopPropagation()
             onRemove()
@@ -834,17 +958,17 @@ function RequestCard({
 }) {
   return (
     <div
-      className="p-4 rounded-lg border bg-card space-y-3 hover:bg-muted/50 transition-colors cursor-pointer"
+      className="cursor-pointer space-y-3 rounded-lg border bg-card p-4 transition-colors hover:bg-muted/50"
       onMouseEnter={onSelect}
       onClick={onSelect}
     >
       <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-green-400 to-blue-600 flex items-center justify-center text-white font-semibold flex-shrink-0">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-green-400 to-blue-600 font-semibold text-white">
           {initials(user.name)}
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-medium truncate">{user.name}</p>
-          <p className="text-xs text-muted-foreground truncate">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{user.name}</p>
+          <p className="truncate text-xs text-muted-foreground">
             {user.email}
           </p>
         </div>
@@ -897,17 +1021,17 @@ function SearchResultCard({
 }) {
   return (
     <div
-      className="p-4 rounded-lg border bg-card space-y-3 hover:bg-muted/50 transition-colors cursor-pointer"
+      className="cursor-pointer space-y-3 rounded-lg border bg-card p-4 transition-colors hover:bg-muted/50"
       onMouseEnter={onSelect}
       onClick={onSelect}
     >
       <div className="flex items-center gap-3">
-        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white font-semibold flex-shrink-0">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-purple-600 font-semibold text-white">
           {initials(user.name)}
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-medium truncate">{user.name}</p>
-          <p className="text-xs text-muted-foreground truncate">
+        <div className="min-w-0 flex-1">
+          <p className="truncate font-medium">{user.name}</p>
+          <p className="truncate text-xs text-muted-foreground">
             {user.username ? `@${user.username}` : user.email}
           </p>
         </div>
@@ -926,7 +1050,7 @@ function SearchResultCard({
             onCancel()
           }}
         >
-          <XIcon className="size-3 mr-1" />
+          <XIcon className="mr-1 size-3" />
           Cancel request
         </Button>
       ) : state === "incoming" ? (
@@ -938,7 +1062,7 @@ function SearchResultCard({
             onAccept()
           }}
         >
-          <CheckIcon className="size-3 mr-1" />
+          <CheckIcon className="mr-1 size-3" />
           Accept their request
         </Button>
       ) : (
@@ -950,7 +1074,7 @@ function SearchResultCard({
             onSend()
           }}
         >
-          <PlusIcon className="size-3 mr-1" />
+          <PlusIcon className="mr-1 size-3" />
           Send friend request
         </Button>
       )}

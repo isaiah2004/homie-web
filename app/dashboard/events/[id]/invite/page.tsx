@@ -14,6 +14,7 @@ import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { SiteHeader } from "@/components/site-header"
+import { PageShell } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
@@ -117,38 +118,41 @@ export default function Page() {
 
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
-      <div>
-        <SiteHeader pageName="Invite" />
-        <PickDevUserEmptyState pageName="events" />
-      </div>
+      <PageShell header={<SiteHeader pageName="Invite" />}>
+        <div className="flex-1 overflow-auto">
+          <PickDevUserEmptyState pageName="events" />
+        </div>
+      </PageShell>
     )
   }
 
   if (data === undefined) {
     return (
-      <div>
-        <SiteHeader pageName="Invite" />
-        <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-      </div>
+      <PageShell header={<SiteHeader pageName="Invite" />}>
+        <div className="flex-1 overflow-auto">
+          <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+        </div>
+      </PageShell>
     )
   }
 
   if (data === null || !data.isCreator) {
     return (
-      <div>
-        <SiteHeader pageName="Invite" />
-        <div className="mx-auto w-full max-w-2xl p-6">
-          <div className="rounded-lg border bg-card p-8 text-center">
-            <h2 className="text-lg font-semibold">Not allowed</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              Only the event creator can invite people.
-            </p>
-            <Button asChild className="mt-4">
-              <Link href={`/dashboard/events/${eventId}`}>Back to event</Link>
-            </Button>
+      <PageShell header={<SiteHeader pageName="Invite" />}>
+        <div className="flex-1 overflow-auto">
+          <div className="mx-auto w-full max-w-2xl p-6">
+            <div className="rounded-lg border bg-card p-8 text-center">
+              <h2 className="text-lg font-semibold">Not allowed</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Only the event creator can invite people.
+              </p>
+              <Button asChild className="mt-4">
+                <Link href={`/dashboard/events/${eventId}`}>Back to event</Link>
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      </PageShell>
     )
   }
 
@@ -184,9 +188,8 @@ export default function Page() {
   }
 
   return (
-    <div>
-      <SiteHeader pageName="Invite" />
-      <div className="flex flex-1 flex-col">
+    <PageShell header={<SiteHeader pageName="Invite" />}>
+      <div className="flex-1 flex flex-col min-w-0 overflow-auto">
         <div className="@container/main mx-auto w-full max-w-2xl flex-1 p-4 md:p-6">
           <Button variant="ghost" size="sm" asChild className="mb-3">
             <Link href={`/dashboard/events/${eventId}`}>
@@ -285,6 +288,6 @@ export default function Page() {
           </div>
         </div>
       </div>
-    </div>
+    </PageShell>
   )
 }

@@ -7,6 +7,7 @@ import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
 import { Show, useClerk, useUser } from "@clerk/nextjs"
 import { useActiveUser } from "@/hooks/use-active-user"
+import { useAccountType } from "@/hooks/use-account-type"
 import {
   Sidebar,
   SidebarContent,
@@ -59,54 +60,126 @@ import {
 } from "lucide-react"
 
 import Link from "next/link"
+
+// Nav config split by account type. See `useAccountType()` and
+// `buildNavForAccountType()` below for how these are composed at render time.
+//
+// `commonNav` is shown to everyone. `personalNav` / `businessNav` are merged
+// into the common list in a specific interleaved order — the final sequence
+// the sidebar should render is:
+//   Homie, Chats, Friends|Businesses, (Communities), Events, My Coupons|Ads,
+//   Profile, Notifications
+// Business accounts also get a "Team Chat" entry slotted after Businesses.
+
+type NavItem = {
+  title: string
+  url: string
+  icon: React.ReactNode
+}
+
+const commonNav: Record<
+  "homie" | "chats" | "events" | "profile" | "notifications",
+  NavItem
+> = {
+  homie: {
+    title: "Homie",
+    url: "/dashboard/homie",
+    icon: <Bot />,
+  },
+  chats: {
+    title: "Chats",
+    url: "/dashboard/chats",
+    icon: <MessageSquare />,
+  },
+  events: {
+    title: "Events",
+    url: "/dashboard/events",
+    icon: <CalendarDaysIcon />,
+  },
+  profile: {
+    title: "Profile",
+    url: "/dashboard/profile",
+    icon: <User />,
+  },
+  notifications: {
+    title: "Notifications",
+    url: "/dashboard/notifications",
+    icon: <BellIcon />,
+  },
+}
+
+const personalNav: Record<
+  "friends" | "communities" | "myCoupons",
+  NavItem
+> = {
+  friends: {
+    title: "Friends",
+    url: "/dashboard/friends",
+    icon: <Users />,
+  },
+  communities: {
+    title: "Communities",
+    url: "/dashboard/communities",
+    icon: <UsersRoundIcon />,
+  },
+  myCoupons: {
+    title: "My Coupons",
+    url: "/dashboard/my-coupons",
+    icon: <TicketIcon />,
+  },
+}
+
+const businessNav: Record<"businesses" | "teamChat" | "ads", NavItem> = {
+  // For business accounts, the "Businesses" entry is a shortcut into the
+  // business workspace (picker/default business) rather than the directory.
+  businesses: {
+    title: "Businesses",
+    url: "/dashboard/business",
+    icon: <Building2Icon />,
+  },
+  teamChat: {
+    title: "Team Chat",
+    url: "/dashboard/chats?tab=team",
+    icon: <UsersRoundIcon />,
+  },
+  ads: {
+    title: "Ads",
+    url: "/dashboard/businesses",
+    icon: <ChartBar />,
+  },
+}
+
+function buildNavForAccountType(
+  accountType: "personal" | "business" | null,
+): NavItem[] {
+  // Default (null = still resolving, or logged-out / no-row) -> personal.
+  // A momentary flash of an extra nav item is preferable to hiding a nav
+  // item the user is entitled to see.
+  if (accountType === "business") {
+    return [
+      commonNav.homie,
+      commonNav.chats,
+      businessNav.businesses,
+      businessNav.teamChat,
+      commonNav.events,
+      businessNav.ads,
+      commonNav.profile,
+      commonNav.notifications,
+    ]
+  }
+  return [
+    commonNav.homie,
+    commonNav.chats,
+    personalNav.friends,
+    personalNav.communities,
+    commonNav.events,
+    personalNav.myCoupons,
+    commonNav.profile,
+    commonNav.notifications,
+  ]
+}
+
 const data = {
-  navMain: [
-    {
-      title: "Homie",
-      url: "/dashboard/homie",
-      icon: <Bot />,
-    },
-    {
-      title: "Friends",
-      url: "/dashboard/friends",
-      icon: <Users />,
-    },
-    {
-      title: "Chats",
-      url: "/dashboard/chats",
-      icon: <MessageSquare />,
-    },
-    {
-      title: "Events",
-      url: "/dashboard/events",
-      icon: <CalendarDaysIcon />,
-    },
-    {
-      title: "Communities",
-      url: "/dashboard/communities",
-      icon: <UsersRoundIcon />,
-    },
-    {
-      title: "Businesses",
-      url: "/dashboard/businesses",
-      icon: <Building2Icon />,
-    },
-    {
-      title: "My Coupons",
-      url: "/dashboard/my-coupons",
-      icon: <TicketIcon />,
-    },
-    {
-      title: "Profile",
-      url: "/dashboard/profile",
-      icon: <User />,
-    },
-    {
-      title: "Notifications",
-      url: "/dashboard/notifications",
-      icon: <BellIcon />,
-    },
-  ],
   navClouds: [
     {
       title: "Capture",
@@ -189,6 +262,9 @@ const data = {
 const isDevMode = process.env.NEXT_PUBLIC_DEV_MODE === "true"
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const { accountType } = useAccountType()
+  const navItems = buildNavForAccountType(accountType)
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
@@ -207,7 +283,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
+        <NavMain items={navItems} />
         {/*<NavDocuments items={data.documents} />*/}
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>

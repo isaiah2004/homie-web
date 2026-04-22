@@ -13,6 +13,7 @@ import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { SiteHeader } from "@/components/site-header"
+import { PageShell } from "@/components/dashboard-layout"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 
@@ -44,17 +45,17 @@ export default function Page() {
 
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
-      <div>
-        <SiteHeader pageName="My Coupons" />
-        <PickDevUserEmptyState pageName="your coupons" />
-      </div>
+      <PageShell header={<SiteHeader pageName="My Coupons" />}>
+        <div className="flex-1 overflow-auto">
+          <PickDevUserEmptyState pageName="your coupons" />
+        </div>
+      </PageShell>
     )
   }
 
   return (
-    <div>
-      <SiteHeader pageName="My Coupons" />
-      <div className="flex flex-1 flex-col">
+    <PageShell header={<SiteHeader pageName="My Coupons" />}>
+      <div className="flex-1 flex flex-col min-w-0 overflow-auto">
         <div className="@container/main mx-auto w-full max-w-3xl flex-1 p-4 md:p-6">
           <div className="mb-4 flex items-center gap-2">
             <TicketIcon className="size-5" />
@@ -103,7 +104,7 @@ export default function Page() {
           )}
         </div>
       </div>
-    </div>
+    </PageShell>
   )
 }
 

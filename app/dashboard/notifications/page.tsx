@@ -11,6 +11,7 @@ import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { SiteHeader } from "@/components/site-header"
+import { PageShell } from "@/components/dashboard-layout"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -103,19 +104,19 @@ export default function Page() {
 
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
-      <div>
-        <SiteHeader pageName="Notifications" />
-        <PickDevUserEmptyState pageName="notifications" />
-      </div>
+      <PageShell header={<SiteHeader pageName="Notifications" />}>
+        <div className="flex-1 overflow-auto">
+          <PickDevUserEmptyState pageName="notifications" />
+        </div>
+      </PageShell>
     )
   }
 
   const unreadCount = (notifications ?? []).filter((n) => !n.read).length
 
   return (
-    <div>
-      <SiteHeader pageName="Notifications" />
-      <div className="flex flex-1 flex-col">
+    <PageShell header={<SiteHeader pageName="Notifications" />}>
+      <div className="flex-1 flex flex-col min-w-0 overflow-auto">
         <div className="@container/main flex flex-1 flex-col gap-2 p-4 md:p-6">
           <div className="flex items-center justify-between">
             <div>
@@ -190,6 +191,6 @@ export default function Page() {
           </div>
         </div>
       </div>
-    </div>
+    </PageShell>
   )
 }

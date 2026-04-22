@@ -28,6 +28,7 @@ import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { AdCard } from "@/components/ad-card"
 import { SiteHeader } from "@/components/site-header"
+import { PageShell } from "@/components/dashboard-layout"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -131,40 +132,43 @@ export default function Page() {
 
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
-      <div>
-        <SiteHeader pageName="Community" />
-        <PickDevUserEmptyState pageName="communities" />
-      </div>
+      <PageShell header={<SiteHeader pageName="Community" />}>
+        <div className="flex-1 overflow-auto">
+          <PickDevUserEmptyState pageName="communities" />
+        </div>
+      </PageShell>
     )
   }
 
   if (community === undefined) {
     return (
-      <div>
-        <SiteHeader pageName="Community" />
-        <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-      </div>
+      <PageShell header={<SiteHeader pageName="Community" />}>
+        <div className="flex-1 overflow-auto">
+          <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+        </div>
+      </PageShell>
     )
   }
 
   if (community === null) {
     return (
-      <div>
-        <SiteHeader pageName="Community" />
-        <div className="mx-auto w-full max-w-2xl p-6">
-          <div className="rounded-lg border bg-card p-8 text-center">
-            <h2 className="text-lg font-semibold">Community not found</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              This community doesn&apos;t exist or was removed.
-            </p>
-            <Button asChild className="mt-4">
-              <Link href="/dashboard/communities">
-                Back to communities
-              </Link>
-            </Button>
+      <PageShell header={<SiteHeader pageName="Community" />}>
+        <div className="flex-1 overflow-auto">
+          <div className="mx-auto w-full max-w-2xl p-6">
+            <div className="rounded-lg border bg-card p-8 text-center">
+              <h2 className="text-lg font-semibold">Community not found</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                This community doesn&apos;t exist or was removed.
+              </p>
+              <Button asChild className="mt-4">
+                <Link href="/dashboard/communities">
+                  Back to communities
+                </Link>
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      </PageShell>
     )
   }
 
@@ -178,9 +182,8 @@ export default function Page() {
   const isAdmin = myRole === "admin"
 
   return (
-    <div>
-      <SiteHeader pageName="Community" />
-      <div className="flex flex-1 flex-col">
+    <PageShell header={<SiteHeader pageName="Community" />}>
+      <div className="flex-1 flex flex-col min-w-0 overflow-auto">
         <div className="@container/main mx-auto w-full max-w-4xl flex-1 p-4 md:p-6">
           <Button variant="ghost" size="sm" asChild className="mb-3">
             <Link href="/dashboard/communities">
@@ -454,7 +457,7 @@ export default function Page() {
           )}
         </div>
       </div>
-    </div>
+    </PageShell>
   )
 }
 

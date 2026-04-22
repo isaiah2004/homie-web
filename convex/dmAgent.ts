@@ -7,7 +7,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText } from "ai";
 import type { Doc } from "./_generated/dataModel";
 
-const CHAT_MODEL = "gemini-3.1-flash-lite";
+const CHAT_MODEL = "gemini-2.5-flash";
 
 export const generateAgentResponse = internalAction({
   args: {

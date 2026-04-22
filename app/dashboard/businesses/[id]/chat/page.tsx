@@ -19,6 +19,7 @@ import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { SiteHeader } from "@/components/site-header"
+import { PageShell } from "@/components/dashboard-layout"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -76,19 +77,21 @@ export default function Page() {
 
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
-      <div>
-        <SiteHeader pageName="Org chat" />
-        <PickDevUserEmptyState pageName="businesses" />
-      </div>
+      <PageShell header={<SiteHeader pageName="Org chat" />}>
+        <div className="flex-1 overflow-auto">
+          <PickDevUserEmptyState pageName="businesses" />
+        </div>
+      </PageShell>
     )
   }
 
   if (viewerData === undefined) {
     return (
-      <div>
-        <SiteHeader pageName="Org chat" />
-        <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-      </div>
+      <PageShell header={<SiteHeader pageName="Org chat" />}>
+        <div className="flex-1 overflow-auto">
+          <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+        </div>
+      </PageShell>
     )
   }
 
@@ -96,29 +99,31 @@ export default function Page() {
   // underlying query throws and we'd show a perpetual "Loading…" shell.
   if (viewerData === null || viewerData.myRole === null) {
     return (
-      <div>
-        <SiteHeader pageName="Org chat" />
-        <div className="mx-auto w-full max-w-2xl p-6">
-          <div className="rounded-lg border bg-card p-8 text-center">
-            <h2 className="text-lg font-semibold">Not allowed</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              You don&apos;t have access to this business.
-            </p>
-            <Button asChild className="mt-4">
-              <Link href="/dashboard/businesses">Back to businesses</Link>
-            </Button>
+      <PageShell header={<SiteHeader pageName="Org chat" />}>
+        <div className="flex-1 overflow-auto">
+          <div className="mx-auto w-full max-w-2xl p-6">
+            <div className="rounded-lg border bg-card p-8 text-center">
+              <h2 className="text-lg font-semibold">Not allowed</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                You don&apos;t have access to this business.
+              </p>
+              <Button asChild className="mt-4">
+                <Link href="/dashboard/businesses">Back to businesses</Link>
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      </PageShell>
     )
   }
 
   if (channels === undefined) {
     return (
-      <div>
-        <SiteHeader pageName="Org chat" />
-        <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-      </div>
+      <PageShell header={<SiteHeader pageName="Org chat" />}>
+        <div className="flex-1 overflow-auto">
+          <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+        </div>
+      </PageShell>
     )
   }
 
@@ -128,17 +133,16 @@ export default function Page() {
   }
 
   return (
-    <div>
-      <SiteHeader pageName="Org chat" />
-      <div className="flex flex-1 flex-col">
-        <div className="@container/main flex-1 p-4 md:p-6">
-          <Button variant="ghost" size="sm" asChild className="mb-3">
+    <PageShell header={<SiteHeader pageName="Org chat" />}>
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <div className="@container/main flex flex-1 flex-col p-4 md:p-6 min-h-0">
+          <Button variant="ghost" size="sm" asChild className="mb-3 self-start">
             <Link href={`/dashboard/businesses/${businessId}`}>
               <ArrowLeftIcon className="size-4" />
               Back
             </Link>
           </Button>
-          <div className="flex h-[calc(100vh-220px)] gap-4">
+          <div className="flex flex-1 min-h-0 gap-4">
             <div className="flex w-60 flex-col overflow-hidden rounded-lg border bg-card">
               <div className="flex items-center gap-2 border-b p-4">
                 <UsersRoundIcon className="size-4 text-muted-foreground" />
@@ -194,7 +198,7 @@ export default function Page() {
           </div>
         </div>
       </div>
-    </div>
+    </PageShell>
   )
 }
 

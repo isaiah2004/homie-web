@@ -12,7 +12,7 @@ import { buildAgentTools } from "./agentTools";
 
 // Model used for every skill. Kept at flash-lite to stay cheap; the router
 // + individual skills all fit comfortably.
-const CHAT_MODEL = "gemini-3.1-flash-lite";
+const CHAT_MODEL = "gemini-2.5-flash";
 
 type SkillName = "findHangout" | "pickMovie" | "scheduleEvent" | "general";
 

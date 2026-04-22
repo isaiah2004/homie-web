@@ -18,11 +18,18 @@
 
 import { spawn } from "node:child_process"
 
-function run(cmd, args) {
+// NOTE: when `shell: true` is used with spawn, passing an args array causes
+// Node to concatenate them with spaces (see DEP0190) — so quoted values like
+// `--cmd "next build"` lose their quotes and get re-tokenized by the shell.
+// To keep the quoting intact we pass the whole command line as a single
+// string and let the shell parse it.
+function run(command) {
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { stdio: "inherit", shell: true })
+    const child = spawn(command, { stdio: "inherit", shell: true })
     child.on("exit", (code) =>
-      code === 0 ? resolve() : reject(new Error(`${cmd} exited with ${code}`)),
+      code === 0
+        ? resolve()
+        : reject(new Error(`\`${command}\` exited with ${code}`)),
     )
     child.on("error", reject)
   })
@@ -32,13 +39,13 @@ const hasDeployKey = !!process.env.CONVEX_DEPLOY_KEY
 
 if (hasDeployKey) {
   console.log(
-    "[build] CONVEX_DEPLOY_KEY detected — running `convex deploy --cmd 'next build'`.",
+    '[build] CONVEX_DEPLOY_KEY detected — running `convex deploy --cmd "next build"`.',
   )
-  await run("npx", ["convex", "deploy", "--cmd", "next build"])
+  await run(`npx convex deploy --cmd "next build"`)
 } else {
   console.log(
     "[build] CONVEX_DEPLOY_KEY not set — running `next build` with committed convex/_generated types. " +
       "Set CONVEX_DEPLOY_KEY on Vercel to also auto-deploy Convex on every build.",
   )
-  await run("npx", ["next", "build"])
+  await run("npx next build")
 }

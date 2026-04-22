@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { AuthProviders } from "@/components/AuthProviders"
 import { DevUserSwitcher } from "@/components/dev/DevUserSwitcher"
+import { Toaster } from "@/components/ui/sonner"
 
 import { cn } from "@/lib/utils"
 import "./globals.css"
@@ -48,6 +49,7 @@ export default function RootLayout({
             <TooltipProvider>{children}</TooltipProvider>
             <DevUserSwitcher />
           </AuthProviders>
+          <Toaster />
         </ThemeProvider>
       </body>
     </html>

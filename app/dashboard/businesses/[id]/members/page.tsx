@@ -20,6 +20,7 @@ import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { SiteHeader } from "@/components/site-header"
+import { PageShell } from "@/components/dashboard-layout"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -89,19 +90,21 @@ export default function Page() {
 
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
-      <div>
-        <SiteHeader pageName="Members" />
-        <PickDevUserEmptyState pageName="businesses" />
-      </div>
+      <PageShell header={<SiteHeader pageName="Members" />}>
+        <div className="flex-1 overflow-auto">
+          <PickDevUserEmptyState pageName="businesses" />
+        </div>
+      </PageShell>
     )
   }
 
   if (viewerData === undefined) {
     return (
-      <div>
-        <SiteHeader pageName="Members" />
-        <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-      </div>
+      <PageShell header={<SiteHeader pageName="Members" />}>
+        <div className="flex-1 overflow-auto">
+          <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+        </div>
+      </PageShell>
     )
   }
 
@@ -109,29 +112,31 @@ export default function Page() {
   // for non-members) never gets stuck in a pending state on this page.
   if (viewerData === null || viewerData.myRole === null) {
     return (
-      <div>
-        <SiteHeader pageName="Members" />
-        <div className="mx-auto w-full max-w-2xl p-6">
-          <div className="rounded-lg border bg-card p-8 text-center">
-            <h2 className="text-lg font-semibold">Not allowed</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              You don&apos;t have access to this business.
-            </p>
-            <Button asChild className="mt-4">
-              <Link href="/dashboard/businesses">Back to businesses</Link>
-            </Button>
+      <PageShell header={<SiteHeader pageName="Members" />}>
+        <div className="flex-1 overflow-auto">
+          <div className="mx-auto w-full max-w-2xl p-6">
+            <div className="rounded-lg border bg-card p-8 text-center">
+              <h2 className="text-lg font-semibold">Not allowed</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                You don&apos;t have access to this business.
+              </p>
+              <Button asChild className="mt-4">
+                <Link href="/dashboard/businesses">Back to businesses</Link>
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      </PageShell>
     )
   }
 
   if (memberData === undefined) {
     return (
-      <div>
-        <SiteHeader pageName="Members" />
-        <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-      </div>
+      <PageShell header={<SiteHeader pageName="Members" />}>
+        <div className="flex-1 overflow-auto">
+          <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+        </div>
+      </PageShell>
     )
   }
 
@@ -167,9 +172,8 @@ export default function Page() {
   }
 
   return (
-    <div>
-      <SiteHeader pageName="Members" />
-      <div className="flex flex-1 flex-col">
+    <PageShell header={<SiteHeader pageName="Members" />}>
+      <div className="flex-1 flex flex-col min-w-0 overflow-auto">
         <div className="@container/main mx-auto w-full max-w-3xl flex-1 p-4 md:p-6">
           <Button variant="ghost" size="sm" asChild className="mb-3">
             <Link href={`/dashboard/businesses/${businessId}`}>
@@ -251,7 +255,7 @@ export default function Page() {
           </div>
         </div>
       </div>
-    </div>
+    </PageShell>
   )
 }
 

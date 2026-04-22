@@ -349,11 +349,19 @@ export const getUserById = internalQuery({
 // Clerk's username is mirrored into our row every call so the Convex copy
 // stays in sync if it changes upstream. Uniqueness is enforced here because
 // Convex has no native unique constraint.
+//
+// `accountType` is set on INSERT only. It's never overwritten on subsequent
+// calls — the signup-intent is immutable (a user can still be added to a
+// business as a member via `businessMembers` regardless of their own
+// accountType). New rows that don't pass `accountType` default to "personal".
 export const getOrCreateUser = mutation({
   args: {
     email: v.string(),
     name: v.optional(v.string()),
     username: v.optional(v.string()),
+    accountType: v.optional(
+      v.union(v.literal("personal"), v.literal("business")),
+    ),
   },
   handler: async (ctx, args) => {
     const normalizedUsername = args.username?.trim().toLowerCase();
@@ -364,7 +372,11 @@ export const getOrCreateUser = mutation({
       .unique();
 
     if (existingUser) {
-      const patch: { username?: string; name?: string } = {};
+      const patch: {
+        username?: string;
+        name?: string;
+        accountType?: "personal" | "business";
+      } = {};
       if (
         normalizedUsername &&
         normalizedUsername !== existingUser.username
@@ -386,6 +398,14 @@ export const getOrCreateUser = mutation({
       // avatars, and @mentions always show the authoritative name.
       if (args.name && args.name.trim() && args.name !== existingUser.name) {
         patch.name = args.name.trim();
+      }
+      // Backfill accountType for pre-existing rows that never had the
+      // field set, but NEVER overwrite an already-set value.
+      if (
+        args.accountType &&
+        existingUser.accountType === undefined
+      ) {
+        patch.accountType = args.accountType;
       }
       if (Object.keys(patch).length > 0) {
         await ctx.db.patch(existingUser._id, patch);
@@ -411,11 +431,25 @@ export const getOrCreateUser = mutation({
       name: args.name ?? "User",
       email: args.email,
       username: normalizedUsername,
+      accountType: args.accountType ?? "personal",
       dob: "",
       visibility: "friends",
     });
 
     return userId;
+  },
+});
+
+// Returns the account type for a user, defaulting to "personal" for any row
+// created before the field existed. Cheap read — used by the sidebar to
+// decide which nav items to show and by the profile page to pick which
+// form variant to render.
+export const getAccountType = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    const user = await ctx.db.get(userId);
+    if (!user) return null;
+    return (user.accountType ?? "personal") as "personal" | "business";
   },
 });
 

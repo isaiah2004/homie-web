@@ -81,11 +81,37 @@ function useActiveUserDev(): ActiveUser {
 
 function useActiveUserClerk(): ActiveUser {
   const clerk = useUser()
+  const email = clerk.user?.primaryEmailAddress?.emailAddress ?? null
+
+  // Callers use `!isLoaded` to decide whether to pass "skip" into Convex
+  // useQuery. Clerk's own `isLoaded` only tells us whether the Clerk SDK
+  // finished booting — it's `true` even when there is no signed-in user,
+  // and it's `true` the instant Clerk signs a user in, long before
+  // <ConvexUserBootstrap> has written the matching `users` row.
+  //
+  // Any backend call that runs `resolveIdentity` -> users lookup will throw
+  // either "Not authenticated" (no JWT) or "User not found for identity"
+  // (JWT valid, row not yet created) if we forward Clerk's isLoaded as-is.
+  //
+  // So: gate on Clerk ready AND signed in AND the Convex users row exists.
+  // We do the row lookup here so every consumer of this hook — bell, account
+  // type, profile forms, etc. — gets the correct skip semantics for free.
+  const convexUser = useQuery(
+    api.users.getUserByEmail,
+    clerk.isLoaded && clerk.isSignedIn && email ? { email } : "skip",
+  )
+
+  const isLoaded =
+    clerk.isLoaded &&
+    !!clerk.isSignedIn &&
+    !!email &&
+    !!convexUser // undefined = still loading; null = bootstrap hasn't run yet
+
   return {
-    isLoaded: clerk.isLoaded,
-    email: clerk.user?.primaryEmailAddress?.emailAddress ?? null,
-    username: clerk.user?.username ?? null,
-    fullName: clerk.user?.fullName ?? null,
+    isLoaded,
+    email,
+    username: convexUser?.username ?? clerk.user?.username ?? null,
+    fullName: convexUser?.name ?? clerk.user?.fullName ?? null,
     devUserId: null,
     isDevMode: false,
   }

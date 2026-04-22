@@ -9,6 +9,12 @@ import { api } from "@/convex/_generated/api"
 import { Doc, Id } from "@/convex/_generated/dataModel"
 import { useActiveUser } from "@/hooks/use-active-user"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
+import {
+  CollapseButton,
+  ColumnHeader,
+  ResizeHandle,
+  useResizableWidth,
+} from "@/components/dashboard-layout"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -291,54 +297,80 @@ export function DmPane() {
     }
   }
 
+  // Column widths — user-resizable via drag handles. The active thread in
+  // the middle takes whatever space is left (flex-1). Persisted only for
+  // this session; a future iteration could mirror into localStorage.
+  const listColumn = useResizableWidth({
+    initial: 300,
+    min: 240,
+    max: 520,
+    side: "right",
+  })
+  const drawerColumn = useResizableWidth({
+    initial: 340,
+    min: 280,
+    max: 560,
+    side: "left",
+  })
+  const [drawerOpen, setDrawerOpen] = React.useState(true)
+
   if (!clerkLoaded) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+    return <div className="flex-1 p-6 text-sm text-muted-foreground">Loading…</div>
   }
   if (activeUser.isDevMode && !activeUser.devUserId) {
-    return <PickDevUserEmptyState pageName="chats" />
+    return (
+      <div className="flex-1 overflow-auto">
+        <PickDevUserEmptyState pageName="chats" />
+      </div>
+    )
   }
   if (!viewerId) {
-    return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+    return <div className="flex-1 p-6 text-sm text-muted-foreground">Loading…</div>
   }
 
   return (
-    <div className="flex gap-4 h-[calc(100vh-220px)]">
-      {/* ─── Conversations sidebar ─── */}
-      <div className="w-72 border rounded-lg bg-card flex flex-col overflow-hidden">
-        <div className="p-4 border-b shrink-0 flex items-center justify-between">
-          <h3 className="font-semibold">Conversations</h3>
-          <NewChatButton
-            friends={friends ?? []}
-            existingOtherIds={
-              new Set(
-                (conversations ?? [])
-                  .map((c) => c.other?._id)
-                  .filter((id): id is Id<"users"> => !!id),
-              )
-            }
-            onPick={async (otherId) => {
-              try {
-                const convId = await openConversation({
-                  viewerId,
-                  otherId,
-                })
-                setActiveConvId(convId as Id<"dmConversations">)
-              } catch (err) {
-                toast.error(
-                  err instanceof Error ? err.message : String(err),
+    <div className="flex min-h-0 flex-1">
+      {/* ─── Conversations column ─── */}
+      <div
+        className="flex min-h-0 shrink-0 flex-col bg-background"
+        style={{ width: `${listColumn.width}px` }}
+      >
+        <ColumnHeader
+          title="Conversations"
+          actions={
+            <NewChatButton
+              friends={friends ?? []}
+              existingOtherIds={
+                new Set(
+                  (conversations ?? [])
+                    .map((c) => c.other?._id)
+                    .filter((id): id is Id<"users"> => !!id),
                 )
               }
-            }}
-          />
-        </div>
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="p-2 space-y-1">
+              onPick={async (otherId) => {
+                try {
+                  const convId = await openConversation({
+                    viewerId,
+                    otherId,
+                  })
+                  setActiveConvId(convId as Id<"dmConversations">)
+                } catch (err) {
+                  toast.error(
+                    err instanceof Error ? err.message : String(err),
+                  )
+                }
+              }}
+            />
+          }
+        />
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="space-y-1 p-2">
             {conversations === undefined ? (
-              <p className="text-center text-sm text-muted-foreground py-6">
+              <p className="py-6 text-center text-sm text-muted-foreground">
                 Loading…
               </p>
             ) : conversations.length === 0 ? (
-              <div className="text-center text-sm text-muted-foreground py-6 px-2">
+              <div className="px-2 py-6 text-center text-sm text-muted-foreground">
                 No conversations yet. Start one with a friend.
               </div>
             ) : (
@@ -359,38 +391,74 @@ export function DmPane() {
         </ScrollArea>
       </div>
 
-      {/* ─── Active chat pane ─── */}
-      <div className="flex-1 border rounded-lg bg-card flex flex-col overflow-hidden">
+      <ResizeHandle
+        onMouseDown={listColumn.onMouseDown}
+        label="Resize conversations list"
+      />
+
+      {/* ─── Active chat column (flex-1) ─── */}
+      <div className="flex min-h-0 flex-1 flex-col bg-background">
         {!activeConv ? (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            <p className="text-sm">Select a conversation to start</p>
-          </div>
+          <>
+            <ColumnHeader
+              title="Messages"
+              actions={
+                activeConv ? (
+                  <CollapseButton
+                    side="right"
+                    open={drawerOpen}
+                    onToggle={() => setDrawerOpen((v) => !v)}
+                    label={
+                      drawerOpen ? "Hide Homie drawer" : "Show Homie drawer"
+                    }
+                  />
+                ) : null
+              }
+            />
+            <div className="flex flex-1 items-center justify-center text-muted-foreground">
+              <p className="text-sm">Select a conversation to start</p>
+            </div>
+          </>
         ) : (
           <>
-            <div className="p-4 border-b flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-600 flex items-center justify-center text-white font-semibold">
-                {activeConv.other ? initials(activeConv.other.name) : "?"}
-              </div>
-              <div className="min-w-0">
-                <p className="font-semibold truncate">
-                  {activeConv.other?.name ?? "Unknown"}
-                </p>
-                {activeConv.other?.username && (
-                  <p className="text-xs text-muted-foreground truncate">
-                    @{activeConv.other.username}
-                  </p>
-                )}
-              </div>
-            </div>
+            <ColumnHeader
+              title={
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-purple-600 text-sm font-semibold text-white">
+                    {activeConv.other ? initials(activeConv.other.name) : "?"}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold leading-tight">
+                      {activeConv.other?.name ?? "Unknown"}
+                    </p>
+                    {activeConv.other?.username && (
+                      <p className="truncate text-xs text-muted-foreground">
+                        @{activeConv.other.username}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              }
+              actions={
+                <CollapseButton
+                  side="right"
+                  open={drawerOpen}
+                  onToggle={() => setDrawerOpen((v) => !v)}
+                  label={
+                    drawerOpen ? "Hide Homie drawer" : "Show Homie drawer"
+                  }
+                />
+              }
+            />
 
-            <ScrollArea className="flex-1">
-              <div className="p-4 space-y-3">
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="space-y-3 p-4">
                 {messages === undefined ? (
-                  <p className="text-center text-sm text-muted-foreground py-6">
+                  <p className="py-6 text-center text-sm text-muted-foreground">
                     Loading…
                   </p>
                 ) : messages.length === 0 ? (
-                  <div className="text-center text-sm text-muted-foreground py-6">
+                  <div className="py-6 text-center text-sm text-muted-foreground">
                     No messages yet. Say hi 👋
                   </div>
                 ) : (
@@ -417,9 +485,9 @@ export function DmPane() {
             </ScrollArea>
 
             {/* Composer */}
-            <div className="p-4 border-t space-y-2">
+            <div className="shrink-0 space-y-2 border-t p-4">
               {isAgentQuery && (
-                <div className="flex items-center gap-2 text-xs text-violet-700 bg-violet-50 border border-violet-200 rounded-md px-3 py-1.5">
+                <div className="flex items-center gap-2 rounded-md border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs text-violet-700">
                   <BotIcon className="size-3.5" />
                   <span>
                     This will be sent privately to your agent. Use “Share” on
@@ -439,46 +507,67 @@ export function DmPane() {
         )}
       </div>
 
-      {/* ─── Homie drawer (private) ─── */}
-      {activeConv && (
-        <div className="w-80 border rounded-lg bg-card flex flex-col overflow-hidden">
-          <div className="p-4 border-b shrink-0 flex items-center gap-2">
-            <BotIcon className="size-4 text-violet-600" />
-            <h3 className="font-semibold">Homie drawer</h3>
-            <Badge variant="outline" className="text-xs">
-              Private
-            </Badge>
+      {/* ─── Homie drawer column (collapsible + resizable) ─── */}
+      {activeConv && drawerOpen ? (
+        <>
+          <ResizeHandle
+            onMouseDown={drawerColumn.onMouseDown}
+            label="Resize Homie drawer"
+          />
+          <div
+            className="flex min-h-0 shrink-0 flex-col bg-background"
+            style={{ width: `${drawerColumn.width}px` }}
+          >
+            <ColumnHeader
+              icon={<BotIcon className="size-4 text-violet-600" />}
+              title={
+                <span className="flex items-center gap-2">
+                  Homie drawer
+                  <Badge variant="outline" className="text-[10px]">
+                    Private
+                  </Badge>
+                </span>
+              }
+              actions={
+                <CollapseButton
+                  side="right"
+                  open={drawerOpen}
+                  onToggle={() => setDrawerOpen(false)}
+                  label="Hide Homie drawer"
+                />
+              }
+            />
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="space-y-3 p-3">
+                {pendingAgentResponses.length === 0 ? (
+                  <div className="px-2 py-8 text-center text-xs text-muted-foreground">
+                    Tag{" "}
+                    <code className="rounded bg-muted px-1">@homie</code> in
+                    the composer to ask privately (plans, prices, logistics).
+                    Answers appear here until you share them.
+                  </div>
+                ) : (
+                  pendingAgentResponses.map((r) => (
+                    <AgentResponseCard
+                      key={r._id}
+                      response={{
+                        _id: r._id,
+                        query: r.query,
+                        content: r.content,
+                        status: r.status,
+                        error: r.error,
+                      }}
+                      actionLabel={`Share with ${activeConv.other?.name ?? "friend"}`}
+                      onShare={() => handleShare(r._id)}
+                      onDismiss={() => handleDismiss(r._id)}
+                    />
+                  ))
+                )}
+              </div>
+            </ScrollArea>
           </div>
-          <ScrollArea className="flex-1">
-            <div className="p-3 space-y-3">
-              {pendingAgentResponses.length === 0 ? (
-                <div className="text-center text-xs text-muted-foreground py-8 px-2">
-                  Tag{" "}
-                  <code className="px-1 bg-muted rounded">@homie</code> in
-                  the composer to ask privately (plans, prices, logistics).
-                  Answers appear here until you share them.
-                </div>
-              ) : (
-                pendingAgentResponses.map((r) => (
-                  <AgentResponseCard
-                    key={r._id}
-                    response={{
-                      _id: r._id,
-                      query: r.query,
-                      content: r.content,
-                      status: r.status,
-                      error: r.error,
-                    }}
-                    actionLabel={`Share with ${activeConv.other?.name ?? "friend"}`}
-                    onShare={() => handleShare(r._id)}
-                    onDismiss={() => handleDismiss(r._id)}
-                  />
-                ))
-              )}
-            </div>
-          </ScrollArea>
-        </div>
-      )}
+        </>
+      ) : null}
 
       <ForwardToGroupDialog
         sourceMessageId={forwardingMessageId}

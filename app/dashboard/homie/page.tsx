@@ -328,10 +328,13 @@ export default function Page() {
       <SiteHeader pageName="Homie" />
       
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar - Collapsible and Resizable */}
-        <div 
+        {/* Sidebar - Collapsible and Resizable.
+            No `border-r` here — the resize handle below carries the 1-px
+            vertical separator so it connects cleanly with the `border-b` lines
+            on column headers / composers at T-junctions. */}
+        <div
           ref={sidebarRef}
-          className={`flex flex-col border-r bg-background transition-all duration-200 ease-out ${sidebarOpen ? 'min-w-0' : 'w-0 overflow-hidden border-0'}`}
+          className={`flex flex-col bg-background transition-all duration-200 ease-out ${sidebarOpen ? 'min-w-0' : 'w-0 overflow-hidden'}`}
           style={{ width: sidebarOpen ? `${sidebarWidth}px` : '0px' }}
         >
           <div className="flex items-center justify-between px-4 py-3 border-b shrink-0 h-[65px] gap-2">
@@ -434,16 +437,18 @@ export default function Page() {
           </ScrollArea>
         </div>
 
-        {/* Resize Handle */}
+        {/* Resize handle — 1-px visible separator (matching horizontal
+            border-b thickness) with a wider invisible hit area via `::before`
+            so T-junctions connect cleanly while staying easy to grab. `z-10`
+            keeps the pseudo above adjacent columns for pointer events. */}
         {sidebarOpen && (
-          <div 
-            className="w-1.5 bg-transparent hover:bg-primary/30 cursor-col-resize transition-colors shrink-0 relative group touch-none"
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize conversations sidebar"
+            className="relative z-10 w-px shrink-0 cursor-col-resize touch-none bg-border transition-colors hover:bg-primary/60 before:absolute before:inset-y-0 before:-left-1.5 before:-right-1.5 before:cursor-col-resize before:content-['']"
             onMouseDown={handleMouseDown}
-          >
-            <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-3 opacity-0 group-hover:opacity-100 transition-opacity">
-              <div className="h-full w-0.5 bg-primary/50 mx-auto rounded-full" />
-            </div>
-          </div>
+          />
         )}
 
         {/* Main Chat Area */}

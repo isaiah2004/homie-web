@@ -16,6 +16,7 @@ import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { SiteHeader } from "@/components/site-header"
+import { PageShell } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -90,10 +91,11 @@ export default function Page() {
 
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
-      <div>
-        <SiteHeader pageName="New Ad" />
-        <PickDevUserEmptyState pageName="businesses" />
-      </div>
+      <PageShell header={<SiteHeader pageName="New Ad" />}>
+        <div className="flex-1 overflow-auto">
+          <PickDevUserEmptyState pageName="businesses" />
+        </div>
+      </PageShell>
     )
   }
 
@@ -139,9 +141,8 @@ export default function Page() {
   }
 
   return (
-    <div>
-      <SiteHeader pageName="New Ad" />
-      <div className="flex flex-1 flex-col">
+    <PageShell header={<SiteHeader pageName="New Ad" />}>
+      <div className="flex-1 flex flex-col min-w-0 overflow-auto">
         <div className="@container/main mx-auto w-full max-w-2xl flex-1 p-4 md:p-6">
           <Button variant="ghost" size="sm" asChild className="mb-3">
             <Link href={`/dashboard/businesses/${businessId}/ads`}>
@@ -295,6 +296,6 @@ export default function Page() {
           </div>
         </div>
       </div>
-    </div>
+    </PageShell>
   )
 }

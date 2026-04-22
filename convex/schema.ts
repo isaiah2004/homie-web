@@ -46,6 +46,22 @@ const externalSourceEnum = v.union(
   v.literal("cheapshark"),
 );
 
+// Account type. Controls which variant of the app a user sees:
+//   - "personal" (default) — the full consumer experience: Friends,
+//     Communities, Events, Homie chat, personal profile, ad/coupons.
+//   - "business" — a curated workspace: outreach-focused Homie chat,
+//     business-profile settings (contact, services, branches), org chat
+//     with managers/employees, ads. Personal surfaces (Friends, Communities)
+//     are hidden.
+// Stored on `users` so a single Convex row is enough to branch the UI; the
+// distinction is set at signup via the Clerk flow and is immutable afterward
+// (a user can still join any `businesses` they're invited to regardless of
+// accountType — accountType is about the *signup intent*, not permissions).
+const accountTypeEnum = v.union(
+  v.literal("personal"),
+  v.literal("business"),
+);
+
 // User profiles table
 export const users = defineTable({
   name: v.string(),
@@ -53,6 +69,10 @@ export const users = defineTable({
   // Mirror of Clerk's username. Optional because a Clerk user may not have one
   // set yet; only users with a username are discoverable via search.
   username: v.optional(v.string()),
+  // accountType is optional to preserve backward compatibility with rows
+  // created before this field existed — readers MUST default to "personal"
+  // when the field is absent. New rows should always pass it explicitly.
+  accountType: v.optional(accountTypeEnum),
   dob: v.string(),
   avatar: v.optional(v.string()),
   bio: v.optional(v.string()),
@@ -691,9 +711,16 @@ export const communityPollVotes = defineTable({
 // members, run advertisements, and have an internal org chat. The
 // `verified` and `isPaid` flags are stubs for a future billing flow —
 // dev mode flips `isPaid` via `billing.devMarkPaid` to gate paid features.
+//
+// Contact + hours fields were added alongside `accountType: "business"` so a
+// business account's /dashboard/profile (rendered via BusinessInfoForm) has
+// a single source of truth for the outward-facing business details.
+// Unbounded lists — branches and services — live in separate tables
+// (`businessBranches`, `businessServices`) per schema guidelines.
 export const businesses = defineTable({
   name: v.string(),
   slug: v.string(),
+  tagline: v.optional(v.string()),
   description: v.optional(v.string()),
   category: v.union(
     v.literal("restaurant"),
@@ -706,9 +733,36 @@ export const businesses = defineTable({
   website: v.optional(v.string()),
   logoUrl: v.optional(v.string()),
   coverImageUrl: v.optional(v.string()),
+  // Primary / HQ location. Additional locations live in `businessBranches`.
   locationAddress: v.optional(v.string()),
   locationLat: v.optional(v.number()),
   locationLng: v.optional(v.number()),
+  // Public-facing contact. Distinct from the creator's personal email / phone
+  // on `users`. Any of these may be empty — the UI renders only what's set.
+  contactEmail: v.optional(v.string()),
+  contactPhone: v.optional(v.string()),
+  contactWhatsapp: v.optional(v.string()),
+  // Inline weekly hours. Bounded (at most 7 day rows) so it's safe to keep
+  // on the parent doc. `closed: true` means the business doesn't operate on
+  // that day; `open`/`close` are "HH:MM" 24h strings.
+  hours: v.optional(
+    v.array(
+      v.object({
+        day: v.union(
+          v.literal("mon"),
+          v.literal("tue"),
+          v.literal("wed"),
+          v.literal("thu"),
+          v.literal("fri"),
+          v.literal("sat"),
+          v.literal("sun"),
+        ),
+        closed: v.boolean(),
+        open: v.optional(v.string()),
+        close: v.optional(v.string()),
+      }),
+    ),
+  ),
   createdBy: v.id("users"),
   createdAt: v.number(),
   verified: v.boolean(),
@@ -717,6 +771,40 @@ export const businesses = defineTable({
   .index("by_slug", ["slug"])
   .index("by_creator", ["createdBy"])
   .index("by_category", ["category"]);
+
+// Branch / additional storefront for a business. One row per physical
+// location beyond the primary one on `businesses`. `displayOrder` lets the
+// owner reorder them in the UI without changing creation times.
+export const businessBranches = defineTable({
+  businessId: v.id("businesses"),
+  name: v.string(),
+  address: v.optional(v.string()),
+  locationLat: v.optional(v.number()),
+  locationLng: v.optional(v.number()),
+  mapsLink: v.optional(v.string()),
+  phone: v.optional(v.string()),
+  email: v.optional(v.string()),
+  displayOrder: v.number(),
+  createdAt: v.number(),
+})
+  .index("by_business", ["businessId"])
+  .index("by_business_and_order", ["businessId", "displayOrder"]);
+
+// A single good or service offered by a business. Freeform price string so
+// owners can express "From ₹499", "$50/hr", "Contact for quote", etc.
+// without a structured money type. `displayOrder` for explicit ordering.
+export const businessServices = defineTable({
+  businessId: v.id("businesses"),
+  name: v.string(),
+  description: v.optional(v.string()),
+  priceLabel: v.optional(v.string()),
+  imageUrl: v.optional(v.string()),
+  kind: v.union(v.literal("product"), v.literal("service")),
+  displayOrder: v.number(),
+  createdAt: v.number(),
+})
+  .index("by_business", ["businessId"])
+  .index("by_business_and_order", ["businessId", "displayOrder"]);
 
 // Business membership roster. Role hierarchy (lowest → highest):
 //   employee < manager < admin < owner
@@ -873,6 +961,8 @@ export default defineSchema({
   communityPolls,
   communityPollVotes,
   businesses,
+  businessBranches,
+  businessServices,
   businessMembers,
   orgChannels,
   orgChannelMembers,

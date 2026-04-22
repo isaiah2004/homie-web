@@ -87,6 +87,10 @@ async function getMembership(
 // "general" org channel is provisioned, and the caller is added to it. All
 // three inserts happen in a single mutation so a half-created business
 // never shows up in any list query.
+//
+// Optional contact + tagline fields are accepted so business-account signup
+// (which auto-creates a business from the Clerk metadata) can seed the full
+// profile in one call.
 export const createBusiness = mutation({
   args: {
     devUserId: v.optional(v.id("users")),
@@ -99,6 +103,7 @@ export const createBusiness = mutation({
       v.literal("service"),
       v.literal("other"),
     ),
+    tagline: v.optional(v.string()),
     description: v.optional(v.string()),
     website: v.optional(v.string()),
     logoUrl: v.optional(v.string()),
@@ -106,6 +111,9 @@ export const createBusiness = mutation({
     locationAddress: v.optional(v.string()),
     locationLat: v.optional(v.number()),
     locationLng: v.optional(v.number()),
+    contactEmail: v.optional(v.string()),
+    contactPhone: v.optional(v.string()),
+    contactWhatsapp: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const callerId = await resolveCallerId(ctx, {
@@ -121,6 +129,7 @@ export const createBusiness = mutation({
     const businessId = await ctx.db.insert("businesses", {
       name,
       slug,
+      tagline: args.tagline,
       description: args.description,
       category: args.category,
       website: args.website,
@@ -129,6 +138,9 @@ export const createBusiness = mutation({
       locationAddress: args.locationAddress,
       locationLat: args.locationLat,
       locationLng: args.locationLng,
+      contactEmail: args.contactEmail,
+      contactPhone: args.contactPhone,
+      contactWhatsapp: args.contactWhatsapp,
       createdBy: callerId,
       createdAt: now,
       verified: false,
@@ -166,6 +178,7 @@ export const updateBusiness = mutation({
     businessId: v.id("businesses"),
     patch: v.object({
       name: v.optional(v.string()),
+      tagline: v.optional(v.string()),
       description: v.optional(v.string()),
       category: v.optional(
         v.union(
@@ -183,6 +196,27 @@ export const updateBusiness = mutation({
       locationAddress: v.optional(v.string()),
       locationLat: v.optional(v.number()),
       locationLng: v.optional(v.number()),
+      contactEmail: v.optional(v.string()),
+      contactPhone: v.optional(v.string()),
+      contactWhatsapp: v.optional(v.string()),
+      hours: v.optional(
+        v.array(
+          v.object({
+            day: v.union(
+              v.literal("mon"),
+              v.literal("tue"),
+              v.literal("wed"),
+              v.literal("thu"),
+              v.literal("fri"),
+              v.literal("sat"),
+              v.literal("sun"),
+            ),
+            closed: v.boolean(),
+            open: v.optional(v.string()),
+            close: v.optional(v.string()),
+          }),
+        ),
+      ),
     }),
   },
   handler: async (ctx, args) => {
@@ -202,6 +236,30 @@ export const updateBusiness = mutation({
     const patch = { ...args.patch }
     if (nextName !== undefined) patch.name = nextName
     await ctx.db.patch(args.businessId, patch)
+  },
+})
+
+// Returns the caller's "primary" business — the oldest business they own.
+// A business account typically has exactly one; if they own multiple, the
+// one with the earliest createdAt wins (matches the auto-created-on-signup
+// row). Non-owners get null — employees/managers use /dashboard/businesses
+// to pick which business they're acting on.
+//
+// Used by BusinessInfoForm on /dashboard/profile to resolve "the business
+// being edited" without asking the user to pick every time.
+export const getMyPrimaryBusiness = query({
+  args: { devUserId: v.optional(v.id("users")) },
+  handler: async (ctx, args) => {
+    const callerId = await resolveCallerId(ctx, {
+      devUserId: args.devUserId,
+    })
+    const owned = await ctx.db
+      .query("businesses")
+      .withIndex("by_creator", (q) => q.eq("createdBy", callerId))
+      .collect()
+    if (owned.length === 0) return null
+    owned.sort((a, b) => a.createdAt - b.createdAt)
+    return owned[0]
   },
 })
 

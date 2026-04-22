@@ -167,6 +167,7 @@ export function RichTextComposer({
   pendingRef.current = pending
 
   const [mentionsHomie, setMentionsHomie] = React.useState(false)
+  const [hasText, setHasText] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement | null>(null)
 
   // Track in-flight XHRs so we can abort them on unmount / error. Also
@@ -200,7 +201,7 @@ export function RichTextComposer({
       handleKeyDown(_view, event) {
         if (event.key === "Enter" && !event.shiftKey) {
           event.preventDefault()
-          void handleSend()
+          void handleSendRef.current()
           return true
         }
         if (event.key === "Tab" && onTabKey && mentionsHomie) {
@@ -213,6 +214,8 @@ export function RichTextComposer({
     },
     onUpdate({ editor }) {
       const text = editor.getText()
+      const trimmed = !!text.trim()
+      setHasText(trimmed)
       const m = HOMIE_MENTION.test(text)
       setMentionsHomie(m)
       onMentionChange?.(m)
@@ -238,7 +241,6 @@ export function RichTextComposer({
 
   const uploadingCount = pending.filter((p) => p.status === "uploading").length
   const hasReadyAttachments = pending.some((p) => p.status === "ready")
-  const hasText = !!editor?.getText().trim()
   const canSend =
     !disabled && uploadingCount === 0 && (hasText || hasReadyAttachments)
 
@@ -272,6 +274,9 @@ export function RichTextComposer({
       toast.error(err instanceof Error ? err.message : "Failed to send")
     }
   }
+
+  const handleSendRef = React.useRef(handleSend)
+  handleSendRef.current = handleSend
 
   async function handleFilesPicked(filesList: FileList | null) {
     if (!filesList || filesList.length === 0) return

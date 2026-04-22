@@ -15,6 +15,7 @@ import { useActiveUser } from "@/hooks/use-active-user"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { SiteHeader } from "@/components/site-header"
+import { PageShell } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -105,17 +106,17 @@ export default function Page() {
 
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
-      <div>
-        <SiteHeader pageName="Communities" />
-        <PickDevUserEmptyState pageName="communities" />
-      </div>
+      <PageShell header={<SiteHeader pageName="Communities" />}>
+        <div className="flex-1 overflow-auto">
+          <PickDevUserEmptyState pageName="communities" />
+        </div>
+      </PageShell>
     )
   }
 
   return (
-    <div>
-      <SiteHeader pageName="Communities" />
-      <div className="flex flex-1 flex-col">
+    <PageShell header={<SiteHeader pageName="Communities" />}>
+      <div className="flex-1 flex flex-col min-w-0 overflow-auto">
         <div className="@container/main flex flex-1 flex-col gap-4 p-4 md:p-6">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -304,6 +305,6 @@ export default function Page() {
           </Tabs>
         </div>
       </div>
-    </div>
+    </PageShell>
   )
 }

@@ -22,6 +22,7 @@ import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { SiteHeader } from "@/components/site-header"
+import { PageShell } from "@/components/dashboard-layout"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -100,38 +101,41 @@ export default function Page() {
 
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
-      <div>
-        <SiteHeader pageName="Event" />
-        <PickDevUserEmptyState pageName="events" />
-      </div>
+      <PageShell header={<SiteHeader pageName="Event" />}>
+        <div className="flex-1 overflow-auto">
+          <PickDevUserEmptyState pageName="events" />
+        </div>
+      </PageShell>
     )
   }
 
   if (data === undefined) {
     return (
-      <div>
-        <SiteHeader pageName="Event" />
-        <div className="p-6 text-sm text-muted-foreground">Loading…</div>
-      </div>
+      <PageShell header={<SiteHeader pageName="Event" />}>
+        <div className="flex-1 overflow-auto">
+          <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+        </div>
+      </PageShell>
     )
   }
 
   if (data === null) {
     return (
-      <div>
-        <SiteHeader pageName="Event" />
-        <div className="mx-auto w-full max-w-2xl p-6">
-          <div className="rounded-lg border bg-card p-8 text-center">
-            <h2 className="text-lg font-semibold">Event unavailable</h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              This event doesn&apos;t exist, was removed, or isn&apos;t visible to you.
-            </p>
-            <Button asChild className="mt-4">
-              <Link href="/dashboard/events">Back to events</Link>
-            </Button>
+      <PageShell header={<SiteHeader pageName="Event" />}>
+        <div className="flex-1 overflow-auto">
+          <div className="mx-auto w-full max-w-2xl p-6">
+            <div className="rounded-lg border bg-card p-8 text-center">
+              <h2 className="text-lg font-semibold">Event unavailable</h2>
+              <p className="mt-2 text-sm text-muted-foreground">
+                This event doesn&apos;t exist, was removed, or isn&apos;t visible to you.
+              </p>
+              <Button asChild className="mt-4">
+                <Link href="/dashboard/events">Back to events</Link>
+              </Button>
+            </div>
           </div>
         </div>
-      </div>
+      </PageShell>
     )
   }
 
@@ -165,9 +169,8 @@ export default function Page() {
   }
 
   return (
-    <div>
-      <SiteHeader pageName="Event" />
-      <div className="flex flex-1 flex-col">
+    <PageShell header={<SiteHeader pageName="Event" />}>
+      <div className="flex-1 flex flex-col min-w-0 overflow-auto">
         <div className="@container/main mx-auto w-full max-w-3xl flex-1 p-4 md:p-6">
           <Button variant="ghost" size="sm" asChild className="mb-3">
             <Link href="/dashboard/events">
@@ -388,6 +391,6 @@ export default function Page() {
           </div>
         </div>
       </div>
-    </div>
+    </PageShell>
   )
 }
