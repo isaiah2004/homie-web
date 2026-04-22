@@ -558,6 +558,136 @@ export const groupChatAgentResponses = defineTable({
 })
   .index("by_group_and_asker", ["groupChatId", "askerId", "createdAt"]);
 
+// Businesses. Represents a real-world organization (restaurant, retail,
+// fitness studio, tech company, etc.) that can be followed by community
+// members, run advertisements, and have an internal org chat. The
+// `verified` and `isPaid` flags are stubs for a future billing flow —
+// dev mode flips `isPaid` via `billing.devMarkPaid` to gate paid features.
+export const businesses = defineTable({
+  name: v.string(),
+  slug: v.string(),
+  description: v.optional(v.string()),
+  category: v.union(
+    v.literal("restaurant"),
+    v.literal("retail"),
+    v.literal("fitness"),
+    v.literal("tech"),
+    v.literal("service"),
+    v.literal("other"),
+  ),
+  website: v.optional(v.string()),
+  logoUrl: v.optional(v.string()),
+  coverImageUrl: v.optional(v.string()),
+  locationAddress: v.optional(v.string()),
+  locationLat: v.optional(v.number()),
+  locationLng: v.optional(v.number()),
+  createdBy: v.id("users"),
+  createdAt: v.number(),
+  verified: v.boolean(),
+  isPaid: v.boolean(),
+})
+  .index("by_slug", ["slug"])
+  .index("by_creator", ["createdBy"])
+  .index("by_category", ["category"]);
+
+// Business membership roster. Role hierarchy (lowest → highest):
+//   employee < manager < admin < owner
+// Managers can draft/submit ads. Admins can manage members + edit business
+// metadata. The creator is seeded as `owner` and can never be removed.
+export const businessMembers = defineTable({
+  businessId: v.id("businesses"),
+  userId: v.id("users"),
+  role: v.union(
+    v.literal("owner"),
+    v.literal("admin"),
+    v.literal("manager"),
+    v.literal("employee"),
+  ),
+  addedAt: v.number(),
+  addedBy: v.id("users"),
+})
+  .index("by_business", ["businessId"])
+  .index("by_user", ["userId"])
+  .index("by_business_and_user", ["businessId", "userId"])
+  .index("by_business_and_role", ["businessId", "role"]);
+
+// Internal channels under a business. MVP ships with a single auto-created
+// "general" channel per business; the schema supports more channels so PR #7
+// can introduce multiple rooms without a migration.
+export const orgChannels = defineTable({
+  businessId: v.id("businesses"),
+  name: v.string(),
+  createdAt: v.number(),
+}).index("by_business", ["businessId"]);
+
+// Explicit membership roster for org channels. Every business member with
+// access to a channel has a row here; absence of a row means "not a member"
+// which makes channel scoping easy to extend later (e.g. a private #finance
+// channel that only admins see).
+export const orgChannelMembers = defineTable({
+  channelId: v.id("orgChannels"),
+  userId: v.id("users"),
+  joinedAt: v.number(),
+})
+  .index("by_channel", ["channelId"])
+  .index("by_user", ["userId"])
+  .index("by_channel_and_user", ["channelId", "userId"]);
+
+// Messages inside an org channel. Simpler than groupChatMessages — there's
+// no agent-response flow and no inline read receipts (channel chat MVP).
+// `format` is restricted to text|markdown; rich HTML + attachments can land
+// in a later PR without breaking existing rows.
+export const orgChannelMessages = defineTable({
+  channelId: v.id("orgChannels"),
+  from: v.id("users"),
+  content: v.string(),
+  format: v.union(v.literal("text"), v.literal("markdown")),
+  attachmentIds: v.optional(v.array(v.id("attachments"))),
+  sentAt: v.number(),
+}).index("by_channel_and_sentAt", ["channelId", "sentAt"]);
+
+// Advertisements owned by a business. Status flow:
+//   draft → submitted → approved → running → ended
+//           └──────────→ rejected
+// `caption` is capped at 2000 chars server-side. Budget + metrics are
+// optional placeholders for PR #8 which wires tracking into communities.
+export const ads = defineTable({
+  advertiserBusinessId: v.id("businesses"),
+  title: v.string(),
+  subtitle: v.optional(v.string()),
+  caption: v.string(),
+  ctaLabel: v.optional(v.string()),
+  ctaUrl: v.optional(v.string()),
+  couponCode: v.optional(v.string()),
+  imageUrl: v.optional(v.string()),
+  videoUrl: v.optional(v.string()),
+  status: v.union(
+    v.literal("draft"),
+    v.literal("submitted"),
+    v.literal("approved"),
+    v.literal("running"),
+    v.literal("rejected"),
+    v.literal("ended"),
+  ),
+  budgetPerWeek: v.optional(v.number()),
+  createdAt: v.number(),
+})
+  .index("by_advertiser", ["advertiserBusinessId"])
+  .index("by_status", ["status"]);
+
+// Per-ad daily metric buckets. Populated by PR #8's tracking handlers; the
+// table lands here so analytics queries have a stable target from day one.
+export const adMetrics = defineTable({
+  adId: v.id("ads"),
+  dateBucket: v.string(),
+  impressions: v.number(),
+  clicks: v.number(),
+  couponSaves: v.number(),
+  couponUses: v.number(),
+})
+  .index("by_ad", ["adId"])
+  .index("by_ad_and_date", ["adId", "dateBucket"]);
+
 export default defineSchema({
   users,
   friends,
@@ -577,4 +707,11 @@ export default defineSchema({
   groupChatMembers,
   groupChatMessages,
   groupChatAgentResponses,
+  businesses,
+  businessMembers,
+  orgChannels,
+  orgChannelMembers,
+  orgChannelMessages,
+  ads,
+  adMetrics,
 });
