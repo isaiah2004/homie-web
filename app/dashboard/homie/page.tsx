@@ -17,6 +17,16 @@ import { Badge } from "@/components/ui/badge"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { MessageCircle, History, Sparkles, Mic, MicOff, Menu, Trash2, Phone } from "lucide-react"
+import { toast } from "sonner"
+
+// Voice chat is gated behind an allowlist while we work out unit economics —
+// Vapi minutes are expensive and we don't want anonymous prod users running
+// up the bill. Set NEXT_PUBLIC_VOICE_CHAT_ALLOWED_EMAILS to a comma-separated
+// list of emails to grant access without a redeploy.
+const voiceChatAllowedEmails = (process.env.NEXT_PUBLIC_VOICE_CHAT_ALLOWED_EMAILS ?? "")
+  .split(",")
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean)
 
 interface Message {
   id: string
@@ -225,8 +235,19 @@ export default function Page() {
     }
   }
 
+  const isVoiceChatAllowed =
+    !!clerkEmail && voiceChatAllowedEmails.includes(clerkEmail.toLowerCase())
+
   const startNewVoiceCall = async () => {
     if (!convexUserId) return
+    if (!isVoiceChatAllowed) {
+      toast.info("Voice chat is paused", {
+        description:
+          "Voice calls are too expensive for us to offer to everyone right now, so they're limited to a small group of testers. Text chat still works as normal.",
+        duration: 6000,
+      })
+      return
+    }
     try {
       const convId = await createConversation({
         userId: convexUserId,
