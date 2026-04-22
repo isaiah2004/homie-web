@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ExternalLinkIcon, TagIcon } from "lucide-react"
+import { CheckIcon, CopyIcon, ExternalLinkIcon, TagIcon } from "lucide-react"
 
 import type { Doc } from "@/convex/_generated/dataModel"
 import { Badge } from "@/components/ui/badge"
@@ -13,7 +13,12 @@ export type AdCardProps = {
   // Optional handlers wired from the host page. Tracking is not plumbed in
   // this PR — PR #8 will wrap these to emit impression / click events.
   onCtaClick?: () => void
+  // Fired when the viewer taps "Save coupon". Host should persist via
+  // `api.communityAds.saveCoupon`. Ignored when `ad.couponCode` is unset.
   onSaveCoupon?: () => void
+  // Viewer has already saved this coupon. When true the button switches
+  // to a "Saved — copy" affordance backed by `onCopyCoupon`.
+  isCouponSaved?: boolean
   // "community" renders the ad the way a community viewer would see it
   // (clean, CTA-forward). "business" is for the owner's preview — same
   // shape but we show the status pill + muted affordance around coupon.
@@ -47,10 +52,12 @@ export function AdCard({
   ad,
   onCtaClick,
   onSaveCoupon,
+  isCouponSaved,
   context = "community",
   className,
   statusBadge,
 }: AdCardProps) {
+  const [copied, setCopied] = React.useState(false)
   const showStatusBadge =
     context === "business" &&
     (statusBadge ?? (
@@ -61,6 +68,17 @@ export function AdCard({
 
   const hasMedia = !!ad.imageUrl || !!ad.videoUrl
   const hasCta = !!ad.ctaLabel && !!ad.ctaUrl
+
+  async function copyCoupon() {
+    if (!ad.couponCode) return
+    try {
+      await navigator.clipboard.writeText(ad.couponCode)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {
+      // Clipboard API failures are non-fatal; the code stays visible inline.
+    }
+  }
 
   return (
     <div
@@ -136,18 +154,37 @@ export function AdCard({
               </Button>
             )}
             {ad.couponCode && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => onSaveCoupon?.()}
-                disabled={!onSaveCoupon && context === "business"}
-                // Coupons don't need an href — they're intended to be
-                // saved into a wallet/pasted at checkout. PR #8 wires this
-                // to a couponSaves event.
-              >
-                <TagIcon className="size-3.5" />
-                {ad.couponCode}
-              </Button>
+              isCouponSaved ? (
+                // Viewer has saved this coupon — show the code + a copy
+                // affordance. The button is clickable but never fires
+                // onSaveCoupon again.
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={copyCoupon}
+                  title="Copy coupon code"
+                >
+                  {copied ? (
+                    <CheckIcon className="size-3.5" />
+                  ) : (
+                    <CopyIcon className="size-3.5" />
+                  )}
+                  {copied ? "Copied" : ad.couponCode}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onSaveCoupon?.()}
+                  disabled={!onSaveCoupon && context === "business"}
+                  // Coupons don't need an href — they're intended to be
+                  // saved into a wallet/pasted at checkout. PR #8 wires this
+                  // to a couponSaves event.
+                >
+                  <TagIcon className="size-3.5" />
+                  {onSaveCoupon ? "Save coupon" : ad.couponCode}
+                </Button>
+              )
             )}
           </div>
         )}
