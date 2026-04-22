@@ -402,6 +402,11 @@ export const notifications = defineTable({
 // `groupChatRef` is a loose string reference (not v.id("groupChats")) because
 // group chats don't exist yet — will be introduced in PR #3. Keeping the
 // column here avoids a follow-up schema migration when that PR ships.
+//
+// `communityId` (added in PR #6) links an event to a community. When set,
+// the event's visibility is further constrained to community members via
+// `listEventsForCommunity` — the existing `visibility` gate still applies
+// to the generic listing paths.
 export const events = defineTable({
   createdBy: v.id("users"),
   name: v.string(),
@@ -422,6 +427,7 @@ export const events = defineTable({
   // Group-chat click-through target. See comment above for why this is a
   // string today.
   groupChatRef: v.optional(v.string()),
+  communityId: v.optional(v.id("communities")),
   status: v.union(
     v.literal("scheduled"),
     v.literal("cancelled"),
@@ -431,7 +437,8 @@ export const events = defineTable({
 })
   .index("by_creator", ["createdBy"])
   .index("by_startsAt", ["startsAt"])
-  .index("by_status_and_startsAt", ["status", "startsAt"]);
+  .index("by_status_and_startsAt", ["status", "startsAt"])
+  .index("by_community_and_startsAt", ["communityId", "startsAt"]);
 
 // Event invites. One row per (event, invitee). Status drives the RSVP UI;
 // `respondedAt` is null while `status === "pending"`. Creator-side access
@@ -557,6 +564,127 @@ export const groupChatAgentResponses = defineTable({
   sharedAsMessageId: v.optional(v.id("groupChatMessages")),
 })
   .index("by_group_and_asker", ["groupChatId", "askerId", "createdAt"]);
+
+// Communities. Location-scoped interest groups (fitness, spiritual, hobby,
+// academic, food, social). A community exposes an announcement feed, polls,
+// and optionally its own events (see `events.communityId`). Membership is
+// gated via `communityMembers`; join requests flow through
+// `communityJoinRequests`. Public communities show up in `discoverCommunities`
+// within their own radius + the viewer's radius (sum of the two). `isPaid`
+// is a billing stub that mirrors businesses — dev mode flips it via
+// `billing.devMarkPaid`.
+//
+// `geoBucket` is a server-computed "lat,lng" rounded to 0.1° so discovery
+// can scan a 3x3 neighbour grid via the `by_geoBucket` index rather than
+// full-scanning the table. 0.1° is ~11 km at the equator — good enough for
+// the MVP radius tiers (neighbourhood, city, region).
+export const communities = defineTable({
+  name: v.string(),
+  slug: v.string(),
+  description: v.string(),
+  category: v.union(
+    v.literal("fitness"),
+    v.literal("spiritual"),
+    v.literal("hobby"),
+    v.literal("academic"),
+    v.literal("food"),
+    v.literal("social"),
+    v.literal("other"),
+  ),
+  coverImageUrl: v.optional(v.string()),
+  avatarUrl: v.optional(v.string()),
+  locationLat: v.number(),
+  locationLng: v.number(),
+  locationLabel: v.optional(v.string()),
+  locationRadiusKm: v.number(),
+  isPublic: v.boolean(),
+  isPaid: v.boolean(),
+  createdBy: v.id("users"),
+  createdAt: v.number(),
+  memberCount: v.number(),
+  geoBucket: v.string(),
+})
+  .index("by_slug", ["slug"])
+  .index("by_category", ["category"])
+  .index("by_geoBucket", ["geoBucket"]);
+
+// Community membership roster. Role hierarchy (lowest → highest):
+//   member < announcer < moderator < admin
+// Only admins see the full member list (privacy constraint from the spec).
+// Announcers can post community announcements; moderators additionally
+// create polls + pin announcements; admins handle join requests + role
+// changes + removals.
+export const communityMembers = defineTable({
+  communityId: v.id("communities"),
+  userId: v.id("users"),
+  role: v.union(
+    v.literal("admin"),
+    v.literal("moderator"),
+    v.literal("announcer"),
+    v.literal("member"),
+  ),
+  joinedAt: v.number(),
+  addedBy: v.optional(v.id("users")),
+})
+  .index("by_community", ["communityId"])
+  .index("by_user", ["userId"])
+  .index("by_community_and_user", ["communityId", "userId"])
+  .index("by_community_and_role", ["communityId", "role"]);
+
+// Pending / handled requests to join a community. One row per (community,
+// user, request). On re-request after a previous decline we re-use the
+// existing row — see `communityMembers.requestJoin`.
+export const communityJoinRequests = defineTable({
+  communityId: v.id("communities"),
+  userId: v.id("users"),
+  message: v.optional(v.string()),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("accepted"),
+    v.literal("declined"),
+  ),
+  handledBy: v.optional(v.id("users")),
+  createdAt: v.number(),
+  handledAt: v.optional(v.number()),
+})
+  .index("by_community_and_status", ["communityId", "status"])
+  .index("by_user", ["userId"])
+  .index("by_community_and_user", ["communityId", "userId"]);
+
+// Community announcements. Markdown body rendered via react-markdown +
+// sanitize on the client. Pinned announcements are ordered first in the
+// feed; otherwise we sort by `createdAt` descending.
+export const communityAnnouncements = defineTable({
+  communityId: v.id("communities"),
+  authorId: v.id("users"),
+  title: v.string(),
+  body: v.string(),
+  pinned: v.boolean(),
+  createdAt: v.number(),
+})
+  .index("by_community_and_created", ["communityId", "createdAt"])
+  .index("by_community_and_pinned", ["communityId", "pinned"]);
+
+// Community polls. Options are stored as a bare string array — 2-8 options
+// per poll is enforced in mutations. Votes live in `communityPollVotes`
+// with a uniqueness guarantee of one vote per (poll, user).
+export const communityPolls = defineTable({
+  communityId: v.id("communities"),
+  authorId: v.id("users"),
+  question: v.string(),
+  options: v.array(v.string()),
+  closesAt: v.optional(v.number()),
+  createdAt: v.number(),
+}).index("by_community_and_created", ["communityId", "createdAt"]);
+
+export const communityPollVotes = defineTable({
+  pollId: v.id("communityPolls"),
+  userId: v.id("users"),
+  optionIndex: v.number(),
+  votedAt: v.number(),
+})
+  .index("by_poll", ["pollId"])
+  .index("by_poll_and_user", ["pollId", "userId"]);
 
 // Businesses. Represents a real-world organization (restaurant, retail,
 // fitness studio, tech company, etc.) that can be followed by community
@@ -707,6 +835,12 @@ export default defineSchema({
   groupChatMembers,
   groupChatMessages,
   groupChatAgentResponses,
+  communities,
+  communityMembers,
+  communityJoinRequests,
+  communityAnnouncements,
+  communityPolls,
+  communityPollVotes,
   businesses,
   businessMembers,
   orgChannels,

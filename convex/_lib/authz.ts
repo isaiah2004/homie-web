@@ -50,3 +50,39 @@ export async function getCallerUserId(
   if (!user) throw new Error("User not found for identity")
   return user._id
 }
+
+// Role hierarchy for `communityMembers`. Same pattern as BUSINESS_ROLE_RANK.
+// `requireCommunityRole(ctx, userId, communityId, "moderator")` admits any
+// membership at or above `moderator` (moderator/admin).
+const COMMUNITY_ROLE_RANK = {
+  member: 0,
+  announcer: 1,
+  moderator: 2,
+  admin: 3,
+} as const
+
+export type CommunityRole = keyof typeof COMMUNITY_ROLE_RANK
+
+// Throws if `userId` is not a community member or is below `minRole`.
+// Returns the actual role on success so callers can specialize behaviour
+// (e.g. hide an "edit" button for moderators but show it to admins).
+export async function requireCommunityRole(
+  ctx: QueryCtx | MutationCtx,
+  userId: Id<"users">,
+  communityId: Id<"communities">,
+  minRole: CommunityRole,
+): Promise<{ role: CommunityRole }> {
+  const membership = await ctx.db
+    .query("communityMembers")
+    .withIndex("by_community_and_user", (q) =>
+      q.eq("communityId", communityId).eq("userId", userId),
+    )
+    .unique()
+  if (!membership) throw new Error("Not a community member")
+  if (COMMUNITY_ROLE_RANK[membership.role] < COMMUNITY_ROLE_RANK[minRole]) {
+    throw new Error(
+      `Requires role ${minRole}; have ${membership.role}`,
+    )
+  }
+  return { role: membership.role }
+}
