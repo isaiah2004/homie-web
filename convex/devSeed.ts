@@ -413,6 +413,20 @@ const BUSINESSES: SeedUser[] = [
   },
 ]
 
+// Pairs of seeded usernames that should start as accepted friends so the
+// chat page has something testable out of the box. Idempotent — we only
+// insert rows if the mirror pair doesn't already exist.
+const AUTO_FRIENDSHIPS: Array<{
+  a: string
+  b: string
+  tierA: "close" | "friend"
+  tierB: "close" | "friend"
+}> = [
+  { a: "dev_ankith", b: "dev_priya", tierA: "close", tierB: "close" },
+  { a: "dev_ankith", b: "dev_arjun", tierA: "friend", tierB: "friend" },
+  { a: "dev_priya", b: "dev_sana", tierA: "friend", tierB: "friend" },
+]
+
 export const seedDevDataPublic = mutation({
   args: {},
   handler: async (ctx) => {
@@ -516,6 +530,59 @@ export const seedDevDataPublic = mutation({
       }
     }
 
-    return { inserted, updated, users: results }
+    // Auto-seed friendships between known dev users so the chat page is
+    // usable right out of the seed. Mirror-row pattern: two rows per edge.
+    const byUsername = new Map<string, Id<"users">>()
+    for (const u of results) {
+      byUsername.set(u.username, u._id)
+    }
+    const now = Date.now()
+    let friendshipsInserted = 0
+    for (const pair of AUTO_FRIENDSHIPS) {
+      const aId = byUsername.get(pair.a)
+      const bId = byUsername.get(pair.b)
+      if (!aId || !bId) continue
+      const existingA = await ctx.db
+        .query("friends")
+        .withIndex("by_user_and_friend", (q) =>
+          q.eq("userId", aId).eq("friendId", bId),
+        )
+        .unique()
+      const existingB = await ctx.db
+        .query("friends")
+        .withIndex("by_user_and_friend", (q) =>
+          q.eq("userId", bId).eq("friendId", aId),
+        )
+        .unique()
+      if (!existingA) {
+        await ctx.db.insert("friends", {
+          userId: aId,
+          friendId: bId,
+          status: "accepted",
+          tier: pair.tierA,
+          requestedBy: aId,
+          addedAt: now,
+        })
+        friendshipsInserted++
+      }
+      if (!existingB) {
+        await ctx.db.insert("friends", {
+          userId: bId,
+          friendId: aId,
+          status: "accepted",
+          tier: pair.tierB,
+          requestedBy: aId,
+          addedAt: now,
+        })
+        friendshipsInserted++
+      }
+    }
+
+    return {
+      inserted,
+      updated,
+      users: results,
+      friendshipsInserted,
+    }
   },
 })

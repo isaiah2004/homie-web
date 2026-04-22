@@ -83,6 +83,18 @@ export const getUserByEmail = query({
   },
 });
 
+// Used by Node-runtime actions (`convex/r2.ts`) that don't have ctx.db and
+// need to resolve an authenticated identity's email to our users row.
+export const getUserByEmailInternal = internalQuery({
+  args: { email: v.string() },
+  handler: async (ctx, { email }) => {
+    return await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", email))
+      .unique();
+  },
+});
+
 export const getUserByUsername = query({
   args: { username: v.string() },
   handler: async (ctx, { username }) => {
