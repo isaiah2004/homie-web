@@ -17,4 +17,24 @@ crons.cron(
   {},
 )
 
+// Spotify real-time "now playing" sweep. Polls only connections whose
+// `watchUntil > now`, which clients refresh whenever a viewer opens a
+// friend's profile — idle users aren't polled at all.
+crons.interval(
+  "spotify now-playing sweep",
+  { seconds: 30 },
+  internal.spotifySync.sweepNowPlaying,
+  {},
+)
+
+// Spotify scheduled sync. Runs recent on every connection (Spotify only
+// keeps the last 50 plays so we must not miss a window); refreshes liked
+// every 6h and top every 24h based on `lastXSyncAt` staleness.
+crons.interval(
+  "spotify scheduled sync",
+  { minutes: 15 },
+  internal.spotifySync.sweepScheduled,
+  {},
+)
+
 export default crons
