@@ -71,6 +71,26 @@ export function R2ImageUpload({
   const inputRef = React.useRef<HTMLInputElement | null>(null)
   const [uploading, setUploading] = React.useState(false)
 
+  // `input.showPicker()` is the modern, explicit way to open a file chooser
+  // in response to a user click and is more reliable than `input.click()`
+  // on a `display: none` element (some browsers and extensions silently
+  // drop the user-activation flag for hidden inputs). Falls back to
+  // `.click()` on older engines that don't implement showPicker.
+  function openPicker() {
+    const el = inputRef.current
+    if (!el) return
+    if (typeof el.showPicker === "function") {
+      try {
+        el.showPicker()
+        return
+      } catch {
+        // Some browsers throw if called outside a user gesture — fall
+        // through to `.click()` which is slightly more permissive.
+      }
+    }
+    el.click()
+  }
+
   const generateUploadUrl = useIdentifiedAction(api.r2.generateUploadUrl)
   const finalizeUpload = useIdentifiedMutation(api.attachments.finalizeUpload)
 
@@ -158,7 +178,7 @@ export function R2ImageUpload({
               variant="outline"
               size="sm"
               disabled={disabled || uploading}
-              onClick={() => inputRef.current?.click()}
+              onClick={openPicker}
             >
               {uploading ? (
                 <Loader2Icon className="size-3.5 animate-spin" />
@@ -185,7 +205,7 @@ export function R2ImageUpload({
           variant="outline"
           size="sm"
           disabled={disabled || uploading}
-          onClick={() => inputRef.current?.click()}
+          onClick={openPicker}
         >
           {uploading ? (
             <Loader2Icon className="size-3.5 animate-spin" />
