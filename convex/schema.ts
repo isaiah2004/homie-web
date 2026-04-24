@@ -802,14 +802,37 @@ export const communityJoinRequests = defineTable({
   .index("by_user", ["userId"])
   .index("by_community_and_user", ["communityId", "userId"]);
 
-// Community announcements. Markdown body rendered via react-markdown +
-// sanitize on the client. Pinned announcements are ordered first in the
-// feed; otherwise we sort by `createdAt` descending.
+// Community announcements. Body is either markdown (legacy / default) or
+// HTML produced by the shared TipTap composer — `format` discriminates,
+// defaulting to "markdown" when absent (backward compat for rows created
+// before the rich composer shipped).
+//
+// `attachments` is inline (not a foreign key to the `attachments` table)
+// because announcements are low-volume, the list is bounded to a handful
+// of files per post, and each entry only needs a public R2 URL + the
+// minimal metadata the renderer uses to pick an icon / size chip. This
+// avoids an extra `getMany` round-trip when listing the feed.
+//
+// Pinned announcements are ordered first in the feed; otherwise we sort
+// by `createdAt` descending.
 export const communityAnnouncements = defineTable({
   communityId: v.id("communities"),
   authorId: v.id("users"),
   title: v.string(),
   body: v.string(),
+  format: v.optional(
+    v.union(v.literal("markdown"), v.literal("html")),
+  ),
+  attachments: v.optional(
+    v.array(
+      v.object({
+        url: v.string(),
+        contentType: v.string(),
+        name: v.string(),
+        size: v.number(),
+      }),
+    ),
+  ),
   pinned: v.boolean(),
   createdAt: v.number(),
 })

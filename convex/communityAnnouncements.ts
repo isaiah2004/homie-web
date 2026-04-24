@@ -45,15 +45,32 @@ async function getMembership(
 
 // Post an announcement. Requires role >= announcer. Notifies every
 // community member (except the author) with `community_announcement`.
-// Body is raw markdown — sanitization happens on the client via
-// react-markdown + rehype-sanitize (we avoid DOMPurify on the server
-// per the PR constraints).
+// `format` defaults to "markdown" for backwards compatibility; the rich
+// TipTap composer sends "html" and uploads any attached files to R2 via
+// `api.r2.generateUploadUrl` (same pipeline as DM attachments). The
+// client sanitizes HTML both pre-send (TipTap's constrained schema) and
+// pre-render (DOMPurify in message-content); we don't run DOMPurify on
+// the server because isomorphic-dompurify doesn't initialize inside the
+// Convex V8 isolate — mirrors the `dm.sendMessage` comment.
 export const postAnnouncement = mutation({
   args: {
     devUserId: v.optional(v.id("users")),
     communityId: v.id("communities"),
     title: v.string(),
     body: v.string(),
+    format: v.optional(
+      v.union(v.literal("markdown"), v.literal("html")),
+    ),
+    attachments: v.optional(
+      v.array(
+        v.object({
+          url: v.string(),
+          contentType: v.string(),
+          name: v.string(),
+          size: v.number(),
+        }),
+      ),
+    ),
     pinned: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -70,8 +87,18 @@ export const postAnnouncement = mutation({
     const title = args.title.trim()
     if (title.length < 2) throw new Error("Title is too short")
     const body = args.body.trim()
-    if (body.length === 0) throw new Error("Body is required")
+    // HTML bodies from TipTap may contain an empty `<p></p>` wrapper even
+    // when visually blank. Allow the post when at least one attachment is
+    // present — same rule as the DM composer's "attachment-only" message.
+    const hasAttachments =
+      args.attachments !== undefined && args.attachments.length > 0
+    if (body.length === 0 && !hasAttachments) {
+      throw new Error("Body or an attachment is required")
+    }
     if (body.length > 20_000) throw new Error("Body is too long")
+    if (args.attachments && args.attachments.length > 10) {
+      throw new Error("At most 10 attachments per announcement")
+    }
 
     const community = await ctx.db.get(args.communityId)
     if (!community) throw new Error("Community not found")
@@ -82,6 +109,8 @@ export const postAnnouncement = mutation({
       authorId: callerId,
       title,
       body,
+      format: args.format,
+      attachments: args.attachments,
       pinned: args.pinned ?? false,
       createdAt: now,
     })

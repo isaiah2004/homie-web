@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { PinIcon } from "lucide-react"
+import { PaperclipIcon, PinIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -15,8 +15,23 @@ export type RecentAnnouncementsOutput = {
       _id: string
       title: string
       body: string
+      // `format` / `attachments` were added alongside the TipTap composer.
+      // Optional so chat tool responses from older Convex builds still
+      // type-check. When `format === "html"` we strip tags for the
+      // preview snippet instead of showing raw markup.
+      format?: "markdown" | "html"
+      attachments?: Array<{
+        url: string
+        contentType: string
+        name: string
+        size: number
+      }>
       pinned: boolean
       createdAt: number
+      // `editedAt` was added alongside the `updateAnnouncement` mutation.
+      // Optional for backward compatibility with rows created before the
+      // field existed — absent means never edited.
+      editedAt?: number
     }
     community: {
       _id: string
@@ -39,6 +54,24 @@ function relativeTime(ms: number): string {
   return new Date(ms).toLocaleDateString()
 }
 
+// Render a short plain-text preview of an announcement body, regardless
+// of whether the body is markdown or TipTap-produced HTML. For HTML we
+// drop every tag with a simple regex pass (we're not re-parsing the DOM
+// just to build a snippet) and collapse whitespace.
+function buildSnippet(body: string, format?: "markdown" | "html"): string {
+  const stripped =
+    format === "html"
+      ? body
+          .replace(/<[^>]+>/g, " ")
+          .replace(/&nbsp;/g, " ")
+          .replace(/&amp;/g, "&")
+          .replace(/&lt;/g, "<")
+          .replace(/&gt;/g, ">")
+          .replace(/&quot;/g, '"')
+      : body
+  return stripped.replace(/\s+/g, " ").trim().slice(0, 180)
+}
+
 export function AnnouncementsCard({
   data,
   className,
@@ -58,10 +91,11 @@ export function AnnouncementsCard({
   return (
     <div className={cn("space-y-2", className)}>
       {data.announcements.map(({ announcement, community, author }) => {
-        const snippet = announcement.body
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 180)
+        const snippet = buildSnippet(
+          announcement.body,
+          announcement.format,
+        )
+        const attachmentCount = announcement.attachments?.length ?? 0
         return (
           <Link
             key={announcement._id}
@@ -75,8 +109,22 @@ export function AnnouncementsCard({
               {announcement.pinned && (
                 <PinIcon className="size-3 text-amber-500" />
               )}
+              {attachmentCount > 0 && (
+                <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                  <PaperclipIcon className="size-3" />
+                  {attachmentCount}
+                </span>
+              )}
               <span className="ml-auto text-[10px] text-muted-foreground">
                 {relativeTime(announcement.createdAt)}
+                {announcement.editedAt ? (
+                  <span
+                    title={new Date(announcement.editedAt).toLocaleString()}
+                  >
+                    {" · edited "}
+                    {relativeTime(announcement.editedAt)}
+                  </span>
+                ) : null}
               </span>
             </div>
             <p className="mt-1 truncate text-sm font-medium">
@@ -85,7 +133,7 @@ export function AnnouncementsCard({
             {snippet && (
               <p className="line-clamp-2 text-xs text-muted-foreground">
                 {snippet}
-                {announcement.body.length > snippet.length ? "…" : ""}
+                {snippet.length >= 180 ? "…" : ""}
               </p>
             )}
             {author && (
