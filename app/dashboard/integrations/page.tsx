@@ -18,7 +18,12 @@ import { NowPlayingPill } from "@/components/spotify/NowPlayingPill"
 // Callback landings pass ?connected=1 or ?error=<code>. We surface the
 // outcome as a toast once per mount and then let the live connection query
 // drive the rest of the UI.
-function useCallbackToast() {
+//
+// Isolated as a Suspense-boundaried subcomponent because `useSearchParams`
+// opts the whole route out of static generation unless it's wrapped —
+// Next.js 16 fails the build ("missing-suspense-with-csr-bailout") if the
+// root page component calls it directly.
+function CallbackToast() {
   const params = useSearchParams()
   const connected = params?.get("connected")
   const error = params?.get("error")
@@ -39,10 +44,10 @@ function useCallbackToast() {
       shownRef.current = true
     }
   }, [connected, error])
+  return null
 }
 
 export default function Page() {
-  useCallbackToast()
   const activeUser = useActiveUser()
 
   const skip = activeUser.isDevMode
@@ -73,6 +78,9 @@ export default function Page() {
 
   return (
     <PageShell header={<SiteHeader pageName="Integrations" />}>
+      <React.Suspense fallback={null}>
+        <CallbackToast />
+      </React.Suspense>
       <div className="flex-1 flex flex-col min-w-0 overflow-auto">
         <div className="@container/main mx-auto w-full max-w-4xl flex-1 space-y-6 p-4 md:p-6">
           <div>
