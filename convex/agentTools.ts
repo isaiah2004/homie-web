@@ -122,39 +122,42 @@ export function buildAgentTools(ctx: ActionCtx, askerId: Id<"users">) {
         // Places call, not N sequential.
         const enriched = await Promise.all(
           filtered.map(async (h) => {
-            const base = {
+            let imageUrl = h.imageUrl;
+            let typeLabel: string | undefined;
+            let rating: number | undefined;
+            if (!imageUrl && h.name) {
+              try {
+                const res = await ctx.runAction(
+                  api.placesSearch.searchPlacesForProfile,
+                  {
+                    query: `${h.name} ${h.address ?? ""}`.trim(),
+                    limit: 1,
+                  },
+                );
+                const top = res.places?.[0];
+                if (top) {
+                  imageUrl = top.imageUrl ?? imageUrl;
+                  typeLabel = top.typeLabel;
+                  rating = top.rating;
+                }
+              } catch {
+                // Enrichment is best-effort — never fail the tool if
+                // Places search hiccups.
+              }
+            }
+            return {
               name: h.name,
               placeType: h.placeType,
               tags: h.tags,
               mapsLink: h.mapsLink,
               address: h.address,
-              imageUrl: h.imageUrl,
-              typeLabel: undefined as string | undefined,
-              rating: undefined as number | undefined,
+              imageUrl,
+              typeLabel,
+              rating,
               recommendedBy: h.ownerName,
               ownerLocation: h.ownerLocation,
               score: h.score,
             };
-            if (base.imageUrl || !base.name) return base;
-            try {
-              const res = await ctx.runAction(
-                api.placesSearch.searchPlacesForProfile,
-                {
-                  query: `${base.name} ${base.address ?? ""}`.trim(),
-                  limit: 1,
-                },
-              );
-              const top = res.places?.[0];
-              if (top) {
-                base.imageUrl = top.imageUrl ?? base.imageUrl;
-                base.typeLabel = top.typeLabel;
-                base.rating = top.rating;
-              }
-            } catch {
-              // Enrichment is best-effort — never fail the tool if Places
-              // search hiccups.
-            }
-            return base;
           }),
         );
         return enriched;
@@ -303,7 +306,7 @@ export function buildChatTools(ctx: ActionCtx, askerId: Id<"users">) {
 
     findFriendsWithSharedMedia: tool({
       description:
-        "Find friends whose profile has overlapping items with the asker's profile (music, movies, books, games, anime, series). Use when the asker asks 'which of my friends likes the same X as me' or similar. You can filter by `domain` (media type) and optional `provider`.",
+        "Find friends whose PROFILE-SAVED items overlap with the asker's profile (movies, books, games, anime, series). Use for non-music domains like 'which friends share my taste in anime/movies/books'. For MUSIC or SPOTIFY listening questions prefer `findFriendsListeningTo` — that queries real Spotify listening history, while this tool only compares items users have explicitly pinned to their Homie profile. You can filter by `domain` and optional `provider`.",
       inputSchema: z.object({
         domain: socialMediaDomainSchema.describe(
           "Type of media to intersect. Use 'music' for songs/albums/artists (Spotify), 'movie' for films, 'book' for books/novels, 'game' for video games, 'anime' for anime, 'series' for TV shows.",
@@ -603,6 +606,50 @@ export function buildChatTools(ctx: ActionCtx, askerId: Id<"users">) {
           limit: limit ?? 6,
         });
         return { query, results };
+      },
+    }),
+
+    findFriendsListeningTo: tool({
+      description:
+        "Query real-time Spotify listening history for the asker and their friends. Use this for ANY question about what the asker or their friends 'listen to', their 'top songs', 'recent plays', or 'liked music'. The data comes from users who have connected Spotify via /dashboard/integrations — not from profile-saved media. Prefer this over findFriendMedia or findFriendsWithSharedMedia when the question is about real listening habits.",
+      inputSchema: z.object({
+        kind: z
+          .enum(["liked", "recent", "top_short", "top_medium", "top_long"])
+          .describe(
+            "Which Spotify surface to read. `top_short`≈last 4 weeks, `top_medium`≈last 6 months, `top_long`≈all-time. Pick `recent` for 'what are they listening to right now/lately', `liked` for saved songs, `top_*` for favourites.",
+          ),
+        query: z
+          .string()
+          .optional()
+          .describe(
+            "Optional substring filter applied to track title AND artist name. Use when the asker narrows to a mood/artist, e.g. 'any rock from my friends'.",
+          ),
+        includeSelf: z
+          .boolean()
+          .optional()
+          .describe(
+            "Include the asker's own tracks in the result set. Default true. Set false when the asker explicitly excludes themselves (e.g. 'what do my friends listen to besides me').",
+          ),
+        perOwnerLimit: z
+          .number()
+          .int()
+          .min(1)
+          .max(50)
+          .optional()
+          .describe("Cap tracks per user. Default 10."),
+      }),
+      execute: async ({ kind, query, includeSelf, perOwnerLimit }) => {
+        const blocks = await ctx.runQuery(
+          internal.spotifyFeed.findFriendsListeningToInternal,
+          {
+            askerId,
+            kind,
+            includeSelf: includeSelf ?? true,
+            query,
+            perOwnerLimit: perOwnerLimit ?? 10,
+          },
+        );
+        return { kind, query: query ?? null, blocks };
       },
     }),
   };

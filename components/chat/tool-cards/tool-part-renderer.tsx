@@ -36,6 +36,10 @@ import {
   type FriendProjectsRow,
 } from "./friend-graph-cards"
 import {
+  FriendsListeningToCard,
+  type FriendsListeningToOutput,
+} from "./friends-listening-to-card"
+import {
   SearchAnimeCard,
   SearchBooksCard,
   SearchGamesCard,
@@ -186,6 +190,15 @@ export function ToolPartRenderer({
       return (
         <div className={className}>
           <FriendInterestsCard data={data} />
+        </div>
+      )
+    }
+    case "findFriendsListeningTo": {
+      const data = parseToolOutput<FriendsListeningToOutput>(part.output)
+      if (!data) return <FallbackToolCard part={part} />
+      return (
+        <div className={className}>
+          <FriendsListeningToCard data={data} />
         </div>
       )
     }

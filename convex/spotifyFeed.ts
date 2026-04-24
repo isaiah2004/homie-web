@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, type QueryCtx } from "./_generated/server";
+import { internalQuery, query, type QueryCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { resolveIdentity } from "./lib/identity";
 
@@ -216,5 +216,96 @@ export const getMyNowPlaying = query({
       durationMs: row.durationMs,
       fetchedAt: row.fetchedAt,
     };
+  },
+});
+
+// Aggregated tracks-per-owner query used by the `findFriendsListeningTo`
+// agent tool in `agentTools.ts`. Given an asker, returns the asker's own
+// tracks (when `includeSelf`) plus every accepted friend's tracks under
+// `kind`. Each owner block carries a compact identity payload so the AI
+// tool response and downstream card can render without a second lookup.
+//
+// Permission model follows `listUserTracksForViewer`: asker ⇔ owner must
+// be self or have an accepted friendship edge. The edge direction we check
+// is `owner → asker` (same as the single-user query) — i.e. the owner has
+// accepted the asker as a friend.
+//
+// Text `query` is a best-effort substring filter over `title` + `artists`
+// applied after load. Intentionally simple; full-text semantic search over
+// a user's library isn't in scope for the first pass.
+export const findFriendsListeningToInternal = internalQuery({
+  args: {
+    askerId: v.id("users"),
+    kind: kindValidator,
+    includeSelf: v.boolean(),
+    query: v.optional(v.string()),
+    perOwnerLimit: v.optional(v.number()),
+  },
+  handler: async (
+    ctx,
+    { askerId, kind, includeSelf, query, perOwnerLimit },
+  ) => {
+    // Collect owner ids: self (optional) + accepted friends in either edge
+    // direction. We dedupe by id since the friends table mirrors each
+    // edge (one row per direction, shared status).
+    const acceptedFriendIds = new Set<string>();
+    const asOwnerRows = await ctx.db
+      .query("friends")
+      .withIndex("by_user_and_status", (q) =>
+        q.eq("userId", askerId).eq("status", "accepted"),
+      )
+      .collect();
+    for (const r of asOwnerRows) acceptedFriendIds.add(r.friendId);
+
+    const ownerIds: Id<"users">[] = [];
+    if (includeSelf) ownerIds.push(askerId);
+    for (const fid of acceptedFriendIds) {
+      ownerIds.push(fid as Id<"users">);
+    }
+    if (ownerIds.length === 0) return [];
+
+    const needle = (query ?? "").trim().toLowerCase();
+    const cap = Math.min(
+      Math.max(perOwnerLimit ?? 10, 1),
+      MAX_RESULTS,
+    );
+
+    // For each owner, load their tracks of the requested kind, apply the
+    // query filter, and attach a lightweight owner identity block. Fan-out
+    // is bounded by friend-count which is small in practice.
+    const blocks = await Promise.all(
+      ownerIds.map(async (ownerId) => {
+        const owner = await ctx.db.get(ownerId);
+        if (!owner) return null;
+        const rows = await ctx.db
+          .query("spotifyUserTracks")
+          .withIndex("by_user_and_kind", (q) =>
+            q.eq("userId", ownerId).eq("kind", kind),
+          )
+          .collect();
+        const filtered = needle
+          ? rows.filter(
+              (r) =>
+                r.title.toLowerCase().includes(needle) ||
+                r.artists.toLowerCase().includes(needle),
+            )
+          : rows;
+        const tracks = sortForKind(kind, filtered)
+          .slice(0, cap)
+          .map(toClientTrack);
+        if (tracks.length === 0) return null;
+        return {
+          ownerId,
+          ownerName: owner.name,
+          ownerUsername: owner.username ?? null,
+          ownerAvatar: owner.avatar ?? null,
+          isSelf: ownerId === askerId,
+          tracks,
+        };
+      }),
+    );
+    return blocks.filter(
+      (b): b is NonNullable<typeof b> => b !== null,
+    );
   },
 });
