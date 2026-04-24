@@ -1285,14 +1285,20 @@ function BulkAddInviteDialog({
 
                 {resolvePreview.misses.length > 0 && (
                   <div className="rounded-md border bg-muted/30 p-3">
-                    <p className="text-xs font-medium">
-                      {resolvePreview.misses.length}{" "}
-                      {resolvePreview.misses.length === 1
-                        ? "entry"
-                        : "entries"}{" "}
-                      didn&apos;t match a user:
-                    </p>
-                    <p className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-all text-[11px] text-muted-foreground">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-medium">
+                        {resolvePreview.misses.length}{" "}
+                        {resolvePreview.misses.length === 1
+                          ? "entry"
+                          : "entries"}{" "}
+                        didn&apos;t match a user:
+                      </p>
+                      <Button size="sm" variant="outline" onClick={copyMisses}>
+                        <CopyIcon className="size-3.5" />
+                        Copy
+                      </Button>
+                    </div>
+                    <p className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap break-all text-[11px] text-muted-foreground">
                       {resolvePreview.misses.join("\n")}
                     </p>
                   </div>
