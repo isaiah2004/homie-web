@@ -72,47 +72,68 @@ export function FriendMediaCard({
     )
   }
   return (
-    <div className={cn("space-y-1.5", className)}>
-      {data.map((row, i) => {
-        const Icon = mediaTypeIcon(row.mediaType)
-        return (
-          <div
-            key={`${row.title}-${i}`}
-            className="flex items-start gap-3 rounded-md border bg-card px-3 py-2"
+    <div
+      className={cn(
+        "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4",
+        className,
+      )}
+    >
+      {data.map((row, i) => (
+        <FriendMediaPosterCard key={`${row.title}-${i}`} row={row} />
+      ))}
+    </div>
+  )
+}
+
+function FriendMediaPosterCard({ row }: { row: FriendMediaRow }) {
+  const Icon = mediaTypeIcon(row.mediaType)
+  const isSquareArt =
+    (row.mediaType ?? "").toLowerCase() === "music" ||
+    (row.mediaType ?? "").toLowerCase() === "podcast"
+  const aspectClass = isSquareArt ? "aspect-square" : "aspect-[2/3]"
+  return (
+    <div className="overflow-hidden rounded-lg border bg-card">
+      {row.imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={row.imageUrl}
+          alt={row.title}
+          loading="lazy"
+          className={cn("w-full object-cover", aspectClass)}
+        />
+      ) : (
+        <div
+          className={cn(
+            "flex w-full items-center justify-center bg-gradient-to-br from-slate-500 to-slate-800 text-white",
+            aspectClass,
+          )}
+        >
+          <Icon className="size-8 opacity-80" />
+        </div>
+      )}
+      <div className="p-2">
+        <p
+          className="line-clamp-2 text-sm font-medium leading-tight"
+          title={row.title}
+        >
+          {row.title}
+        </p>
+        {row.subtitle ? (
+          <p
+            className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground"
+            title={row.subtitle}
           >
-            {row.imageUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={row.imageUrl}
-                alt={row.title}
-                className="size-12 shrink-0 rounded object-cover"
-                loading="lazy"
-              />
-            ) : (
-              <div className="flex size-12 shrink-0 items-center justify-center rounded bg-muted">
-                <Icon className="size-5 text-muted-foreground" />
-              </div>
-            )}
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium">{row.title}</p>
-              {row.subtitle ? (
-                <p className="truncate text-xs text-muted-foreground">
-                  {row.subtitle}
-                </p>
-              ) : null}
-              <p className="truncate text-[11px] text-muted-foreground">
-                {row.mediaType ? (
-                  <>
-                    <span className="capitalize">{row.mediaType}</span>
-                    {row.recommendedBy ? " · " : ""}
-                  </>
-                ) : null}
-                {row.recommendedBy ? `from ${row.recommendedBy}` : null}
-              </p>
-            </div>
-          </div>
-        )
-      })}
+            {row.subtitle}
+          </p>
+        ) : null}
+        <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+          {row.mediaType ? (
+            <span className="capitalize">{row.mediaType}</span>
+          ) : null}
+          {row.mediaType && row.recommendedBy ? " · " : ""}
+          {row.recommendedBy ? `from ${row.recommendedBy}` : null}
+        </p>
+      </div>
     </div>
   )
 }
