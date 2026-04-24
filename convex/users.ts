@@ -1,6 +1,6 @@
 import { mutation, query, internalQuery, internalMutation, QueryCtx } from "./_generated/server";
 import { v } from "convex/values";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -341,6 +341,16 @@ export const getUserById = internalQuery({
   args: { userId: v.id("users") },
   handler: async (ctx, { userId }) => {
     return await ctx.db.get(userId);
+  },
+});
+
+// Batch-fetch users for enrichment inside action-tool executes. Ordering
+// mirrors the input; nulls are preserved for missing ids so callers can
+// zip against their source array.
+export const listUsersByIdsInternal = internalQuery({
+  args: { userIds: v.array(v.id("users")) },
+  handler: async (ctx, { userIds }): Promise<Array<Doc<"users"> | null>> => {
+    return await Promise.all(userIds.map((id) => ctx.db.get(id)));
   },
 });
 

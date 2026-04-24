@@ -3,6 +3,7 @@ import {
   query,
   mutation,
   internalMutation,
+  internalQuery,
   QueryCtx,
 } from "./_generated/server";
 import { internal } from "./_generated/api";
@@ -256,6 +257,81 @@ export const listPendingInvitesForMe = query({
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal variants
 // ─────────────────────────────────────────────────────────────────────────────
+
+// RSVP summary for an event, scoped to a particular asker. Returns
+// aggregate counts always; the full attendee roster is only exposed when
+// the asker is the creator OR has at least one invite on the event
+// (matches the product-level visibility of `listInvitesForEvent`).
+export const getRsvpSummaryInternal = internalQuery({
+  args: {
+    askerId: v.id("users"),
+    eventId: v.id("events"),
+  },
+  handler: async (ctx, args) => {
+    const event = await ctx.db.get(args.eventId);
+    if (!event) return null;
+
+    const ownInvite = await getInviteForPair(ctx, args.eventId, args.askerId);
+    const isCreator = event.createdBy === args.askerId;
+    if (!isCreator && !ownInvite) return null; // not authorized to read
+
+    const rows = await ctx.db
+      .query("eventInvites")
+      .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+      .collect();
+
+    const counts = {
+      total: rows.length,
+      accepted: 0,
+      declined: 0,
+      maybe: 0,
+      pending: 0,
+    };
+    for (const r of rows) counts[r.status] += 1;
+
+    // Preview roster: top 6 accepted attendees (+ the rest as name-only
+    // fallback). Creator sees all statuses; invitees see only accepted
+    // previews to mirror the detail-page UX.
+    const previewRows = isCreator
+      ? rows
+      : rows.filter((r) => r.status === "accepted");
+    const previewCap = 6;
+    const sliced = previewRows.slice(0, previewCap);
+    const attendees: Array<{
+      userId: Id<"users">;
+      name: string;
+      username: string | null;
+      avatar: string | null;
+      status: "pending" | "accepted" | "declined" | "maybe";
+    }> = [];
+    for (const r of sliced) {
+      const u = await ctx.db.get(r.inviteeId);
+      if (!u) continue;
+      attendees.push({
+        userId: u._id,
+        name: u.name,
+        username: u.username ?? null,
+        avatar: u.avatar ?? null,
+        status: r.status,
+      });
+    }
+
+    return {
+      event: {
+        _id: event._id,
+        name: event.name,
+        startsAt: event.startsAt,
+        endsAt: event.endsAt ?? null,
+        locationName: event.locationName ?? null,
+        status: event.status,
+      },
+      isCreator,
+      myRsvp: ownInvite?.status ?? null,
+      counts,
+      attendees,
+    };
+  },
+});
 
 // Internal variant of `inviteToEvent` callable from internal actions (e.g.
 // the groupChatAgent scheduleEvent skill auto-inviting every group

@@ -94,6 +94,26 @@ export const createMessage = mutation({
       name: v.string(),
       arguments: v.string(),
     }))),
+    parts: v.optional(
+      v.array(
+        v.object({
+          type: v.string(),
+          text: v.optional(v.string()),
+          toolName: v.optional(v.string()),
+          toolCallId: v.optional(v.string()),
+          input: v.optional(v.string()),
+          output: v.optional(v.string()),
+          state: v.optional(
+            v.union(
+              v.literal("input-available"),
+              v.literal("output-available"),
+              v.literal("output-error"),
+            ),
+          ),
+          errorText: v.optional(v.string()),
+        }),
+      ),
+    ),
   },
   handler: async (ctx, args) => {
     const messageId = await ctx.db.insert("conversationMessages", args);

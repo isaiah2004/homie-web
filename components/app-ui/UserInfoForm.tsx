@@ -69,6 +69,7 @@ import {
   EventInterestsField,
 } from "@/components/app-ui/EventInterestsField"
 import { MediaCard } from "@/components/app-ui/MediaCard"
+import { AddPlaceFromSearchDialog } from "@/components/app-ui/AddPlaceFromSearchDialog"
 import { cn } from "@/lib/utils"
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
@@ -1412,6 +1413,9 @@ export function UserInfoForm() {
                       <PlusIcon className="mr-1 size-4" />
                       Add Manually
                     </Button>
+                    <AddPlaceFromSearchDialog
+                      onPlaceResolved={(place) => places.append(place)}
+                    />
                     <AddFromGoogleMapsDialog
                       onPlaceResolved={(place) => places.append(place)}
                     />

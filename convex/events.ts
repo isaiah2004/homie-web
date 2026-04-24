@@ -427,6 +427,52 @@ export const getEventInternal = internalQuery({
   },
 });
 
+// Upcoming events for a user (created OR invited), within `withinDays` from
+// now (default 60). Skips cancelled events. Sorted ascending by startsAt so
+// the soonest is first. Used by the `listMyUpcomingEvents` chat tool.
+export const listUpcomingForUserInternal = internalQuery({
+  args: {
+    askerId: v.id("users"),
+    withinDays: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const windowMs = Math.min(args.withinDays ?? 60, 365) * 24 * 60 * 60 * 1000;
+    const cutoff = now + windowMs;
+
+    const mine = await ctx.db
+      .query("events")
+      .withIndex("by_creator", (q) => q.eq("createdBy", args.askerId))
+      .collect();
+    const invitedRows = await ctx.db
+      .query("eventInvites")
+      .withIndex("by_invitee", (q) => q.eq("inviteeId", args.askerId))
+      .collect();
+    const invitedEvents: Doc<"events">[] = [];
+    const seen = new Set<string>(mine.map((e) => e._id as string));
+    for (const row of invitedRows) {
+      if (seen.has(row.eventId as string)) continue;
+      const ev = await ctx.db.get(row.eventId);
+      if (!ev) continue;
+      seen.add(ev._id as string);
+      invitedEvents.push(ev);
+    }
+    const all = [...mine, ...invitedEvents]
+      .filter(
+        (e) =>
+          e.status !== "cancelled" &&
+          e.startsAt >= now - 60 * 60 * 1000 && // small grace for in-progress
+          e.startsAt <= cutoff,
+      )
+      .sort((a, b) => a.startsAt - b.startsAt);
+
+    return all.map((event) => ({
+      event,
+      isMine: event.createdBy === args.askerId,
+    }));
+  },
+});
+
 // Internal variant of `createEvent` callable from internal actions (e.g.
 // the groupChatAgent scheduleEvent skill). Takes `creatorId` explicitly
 // because actions don't have `ctx.auth` scoped to a specific Clerk user
