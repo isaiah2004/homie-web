@@ -57,6 +57,7 @@ import {
   LogOut,
   MessageSquare,
   TicketIcon,
+  PlugZapIcon,
 } from "lucide-react"
 
 import Link from "next/link"
@@ -371,6 +372,12 @@ function ClerkUserFooter() {
                 <Link href="/dashboard/notifications" className="cursor-pointer">
                   <Bell className="mr-2 h-4 w-4" />
                   Notifications
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem asChild>
+                <Link href="/dashboard/integrations" className="cursor-pointer">
+                  <PlugZapIcon className="mr-2 h-4 w-4" />
+                  Integrations
                 </Link>
               </DropdownMenuItem>
             </DropdownMenuGroup>
