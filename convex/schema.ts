@@ -403,6 +403,92 @@ export const spotifyAuth = defineTable({
   expiresAt: v.number(),
 });
 
+// Per-user Spotify OAuth connection. One row per user that has linked their
+// Spotify account. Separate from `spotifyAuth` (which is the app-level
+// client-credentials token used for catalog search) because user-scoped
+// endpoints need Authorization Code tokens with a refresh token.
+//
+// `watchUntil` is the demand-gate for now-playing polling — when a viewer
+// opens this user's profile we bump it to now + 90s. The now-playing sweep
+// cron only polls connections whose `watchUntil > now`, so idle users don't
+// burn quota.
+//
+// `lastError: "reauth_required"` means the stored refresh token was rejected
+// (user revoked access on Spotify's end). The UI shows a Reconnect CTA; any
+// other non-empty string is a recoverable sync error.
+export const spotifyConnections = defineTable({
+  userId: v.id("users"),
+  spotifyUserId: v.string(),
+  accessToken: v.string(),
+  refreshToken: v.string(),
+  expiresAt: v.number(),
+  scopes: v.array(v.string()),
+  connectedAt: v.number(),
+  lastLikedSyncAt: v.optional(v.number()),
+  lastRecentSyncAt: v.optional(v.number()),
+  lastTopSyncAt: v.optional(v.number()),
+  lastNowPlayingAt: v.optional(v.number()),
+  lastError: v.optional(v.string()),
+  watchUntil: v.optional(v.number()),
+})
+  .index("by_user", ["userId"])
+  .index("by_watchUntil", ["watchUntil"]);
+
+// Tracks synced from Spotify, discriminated by `kind`.
+//   - "liked"        — saved-tracks library; ordered by `addedAt` desc.
+//   - "recent"       — recently played history; ordered by `playedAt` desc.
+//     A single track can appear multiple times (different `playedAt`).
+//   - "top_short"    — top tracks, last ~4 weeks; ordered by `rank` asc.
+//   - "top_medium"   — top tracks, last ~6 months.
+//   - "top_long"     — top tracks, last ~1 year.
+//
+// Dedupe key for liked/top: (userId, kind, spotifyTrackId).
+// Dedupe key for recent: (userId, kind, spotifyTrackId, playedAt).
+// Top-* rows are wiped and re-inserted on each sync (rank is volatile).
+export const spotifyUserTracks = defineTable({
+  userId: v.id("users"),
+  kind: v.union(
+    v.literal("liked"),
+    v.literal("recent"),
+    v.literal("top_short"),
+    v.literal("top_medium"),
+    v.literal("top_long"),
+  ),
+  spotifyTrackId: v.string(),
+  uri: v.string(),
+  title: v.string(),
+  artists: v.string(),
+  albumImageUrl: v.optional(v.string()),
+  previewUrl: v.optional(v.string()),
+  playedAt: v.optional(v.number()),
+  addedAt: v.optional(v.number()),
+  rank: v.optional(v.number()),
+  syncedAt: v.number(),
+})
+  .index("by_user_and_kind", ["userId", "kind"])
+  .index("by_user_kind_and_track", ["userId", "kind", "spotifyTrackId"]);
+
+// Current playback state for each connected user. One row per user. Updated
+// by `sweepNowPlaying` while `spotifyConnections.watchUntil > now`. When
+// nobody is watching, the row stays stale (its `fetchedAt` shows how stale).
+//
+// `isPlaying: false` with everything else populated means "paused on this
+// track at this position" — the UI can still render a "last played" card.
+// Missing track fields + `isPlaying: false` means "nothing is loaded".
+export const spotifyNowPlaying = defineTable({
+  userId: v.id("users"),
+  isPlaying: v.boolean(),
+  spotifyTrackId: v.optional(v.string()),
+  uri: v.optional(v.string()),
+  title: v.optional(v.string()),
+  artists: v.optional(v.string()),
+  albumImageUrl: v.optional(v.string()),
+  previewUrl: v.optional(v.string()),
+  progressMs: v.optional(v.number()),
+  durationMs: v.optional(v.number()),
+  fetchedAt: v.number(),
+}).index("by_user", ["userId"]);
+
 // Cross-cutting notifications table. Shared by events (PR #4), communities
 // (PR #6), businesses (PR #7), and ads (PR #8). The `type` union enumerates
 // every notification kind up-front so no future schema migration is needed
@@ -974,6 +1060,9 @@ export default defineSchema({
   conversationMessages,
   vapiCalls,
   spotifyAuth,
+  spotifyConnections,
+  spotifyUserTracks,
+  spotifyNowPlaying,
   notifications,
   events,
   eventInvites,
