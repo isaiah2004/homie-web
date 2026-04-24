@@ -568,6 +568,10 @@ export const events = defineTable({
     v.literal("completed"),
   ),
   createdAt: v.number(),
+  // Set by `updateEvent` whenever editable fields change. Surfaced in the
+  // UI next to the creation timestamp so attendees know the page has moved
+  // since they last looked at it.
+  editedAt: v.optional(v.number()),
 })
   .index("by_creator", ["createdBy"])
   .index("by_startsAt", ["startsAt"])
@@ -805,6 +809,10 @@ export const communityJoinRequests = defineTable({
 // Community announcements. Markdown body rendered via react-markdown +
 // sanitize on the client. Pinned announcements are ordered first in the
 // feed; otherwise we sort by `createdAt` descending.
+//
+// `editedAt` is set by `updateAnnouncement` and surfaced as a "· edited"
+// marker next to the timestamp in the UI. Absent means the announcement
+// has never been edited.
 export const communityAnnouncements = defineTable({
   communityId: v.id("communities"),
   authorId: v.id("users"),
@@ -812,6 +820,7 @@ export const communityAnnouncements = defineTable({
   body: v.string(),
   pinned: v.boolean(),
   createdAt: v.number(),
+  editedAt: v.optional(v.number()),
 })
   .index("by_community_and_created", ["communityId", "createdAt"])
   .index("by_community_and_pinned", ["communityId", "pinned"]);
@@ -819,6 +828,11 @@ export const communityAnnouncements = defineTable({
 // Community polls. Options are stored as a bare string array — 2-8 options
 // per poll is enforced in mutations. Votes live in `communityPollVotes`
 // with a uniqueness guarantee of one vote per (poll, user).
+//
+// `editedAt` is set by `updatePoll`. Note: editing the option list clears
+// existing votes (enforced in the mutation) since vote indices would be
+// meaningless after a rename/reorder; editing only the question text
+// preserves votes.
 export const communityPolls = defineTable({
   communityId: v.id("communities"),
   authorId: v.id("users"),
@@ -826,6 +840,7 @@ export const communityPolls = defineTable({
   options: v.array(v.string()),
   closesAt: v.optional(v.number()),
   createdAt: v.number(),
+  editedAt: v.optional(v.number()),
 }).index("by_community_and_created", ["communityId", "createdAt"]);
 
 export const communityPollVotes = defineTable({

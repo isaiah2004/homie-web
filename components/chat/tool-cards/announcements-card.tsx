@@ -17,6 +17,10 @@ export type RecentAnnouncementsOutput = {
       body: string
       pinned: boolean
       createdAt: number
+      // `editedAt` was added alongside the `updateAnnouncement` mutation.
+      // Optional for backward compatibility with rows created before the
+      // field existed — absent means never edited.
+      editedAt?: number
     }
     community: {
       _id: string
@@ -77,6 +81,14 @@ export function AnnouncementsCard({
               )}
               <span className="ml-auto text-[10px] text-muted-foreground">
                 {relativeTime(announcement.createdAt)}
+                {announcement.editedAt ? (
+                  <span
+                    title={new Date(announcement.editedAt).toLocaleString()}
+                  >
+                    {" · edited "}
+                    {relativeTime(announcement.editedAt)}
+                  </span>
+                ) : null}
               </span>
             </div>
             <p className="mt-1 truncate text-sm font-medium">

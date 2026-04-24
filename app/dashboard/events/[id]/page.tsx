@@ -9,6 +9,7 @@ import {
   ArrowLeftIcon,
   CalendarClockIcon,
   MapPinIcon,
+  PencilIcon,
   UsersIcon,
   UserPlusIcon,
   XIcon,
@@ -57,6 +58,18 @@ function formatRange(startsAt: number, endsAt?: number): string {
     year: "numeric",
   })
   return `${dateStr} ${startTime} – ${endDate} ${endTime}`
+}
+
+function formatRelative(ms: number): string {
+  const diff = Date.now() - ms
+  const m = Math.round(diff / 60000)
+  if (m < 1) return "just now"
+  if (m < 60) return `${m}m ago`
+  const h = Math.round(m / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.round(h / 24)
+  if (d < 7) return `${d}d ago`
+  return new Date(ms).toLocaleDateString()
 }
 
 function rsvpBadgeTone(
@@ -219,9 +232,15 @@ export default function Page() {
                     )}
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   {isCreator && !cancelled && (
                     <>
+                      <Button size="sm" variant="outline" asChild>
+                        <Link href={`/dashboard/events/${event._id}/edit`}>
+                          <PencilIcon className="size-4" />
+                          Edit
+                        </Link>
+                      </Button>
                       <Button size="sm" variant="outline" asChild>
                         <Link href={`/dashboard/events/${event._id}/invite`}>
                           <UserPlusIcon className="size-4" />
@@ -281,6 +300,14 @@ export default function Page() {
                     <UsersIcon className="size-4 shrink-0 text-muted-foreground mt-0.5" />
                     <span className="text-muted-foreground">
                       Hosted by {creator.name}
+                      {event.editedAt ? (
+                        <span
+                          className="ml-1"
+                          title={new Date(event.editedAt).toLocaleString()}
+                        >
+                          · edited {formatRelative(event.editedAt)}
+                        </span>
+                      ) : null}
                     </span>
                   </div>
                 )}
