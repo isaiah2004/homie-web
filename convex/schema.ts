@@ -513,6 +513,7 @@ export const notifications = defineTable({
     v.literal("community_announcement"),
     v.literal("community_role_changed"),
     v.literal("community_removed"),
+    v.literal("community_invite"),
     v.literal("business_member_invite"),
     v.literal("business_role_changed"),
     v.literal("ad_approved"),
@@ -804,6 +805,38 @@ export const communityJoinRequests = defineTable({
 })
   .index("by_community_and_status", ["communityId", "status"])
   .index("by_user", ["userId"])
+  .index("by_community_and_user", ["communityId", "userId"]);
+
+// Community invites. Admin-initiated counterpart to `communityJoinRequests`.
+// Where join requests are user-initiated (member asks to join, admin approves),
+// a community invite is admin-initiated (admin invites a user, user accepts).
+// The two tables are intentionally separate — they have different authorship,
+// different notification patterns, and different cancellation semantics.
+//
+// `status` lifecycle:
+//   pending -> accepted  (invitee accepted; membership row is created)
+//   pending -> declined  (invitee refused)
+//   pending -> cancelled (admin revoked before response)
+// `respondedAt` is set when the invite leaves `pending`.
+//
+// Idempotency: a pending invite for the same (community, user) pair is
+// reused; an accepted/declined/cancelled pair does NOT block a fresh invite
+// (admin may re-invite after a decline or cancellation).
+export const communityInvites = defineTable({
+  communityId: v.id("communities"),
+  userId: v.id("users"),
+  invitedBy: v.id("users"),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("accepted"),
+    v.literal("declined"),
+    v.literal("cancelled"),
+  ),
+  createdAt: v.number(),
+  respondedAt: v.optional(v.number()),
+})
+  .index("by_community_and_status", ["communityId", "status"])
+  .index("by_user_and_status", ["userId", "status"])
   .index("by_community_and_user", ["communityId", "userId"]);
 
 // Community announcements. Body is either markdown (legacy / default) or
@@ -1129,6 +1162,7 @@ export default defineSchema({
   communities,
   communityMembers,
   communityJoinRequests,
+  communityInvites,
   communityAnnouncements,
   communityPolls,
   communityPollVotes,

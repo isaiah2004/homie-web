@@ -1,22 +1,31 @@
 "use client"
 
 import * as React from "react"
+import { Suspense } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { useQuery } from "convex/react"
+import { toast } from "sonner"
 import {
   ChevronDownIcon,
   CompassIcon,
+  MailIcon,
+  MapPinIcon,
   PlusIcon,
   SearchIcon,
+  UsersIcon,
   UsersRoundIcon,
 } from "lucide-react"
 
 import { api } from "@/convex/_generated/api"
+import type { Id } from "@/convex/_generated/dataModel"
 import { useActiveUser } from "@/hooks/use-active-user"
+import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { SiteHeader } from "@/components/site-header"
 import { PageShell } from "@/components/dashboard-layout"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -49,7 +58,36 @@ const LOCATION_PRESETS: Array<{ label: string; lat: number; lng: number }> = [
 ]
 
 export default function Page() {
+  // Next.js 16 prerenders this page; `useSearchParams()` (used below to
+  // read `?tab=invites` from notification click-throughs) requires a
+  // Suspense boundary to survive SSR bailout.
+  return (
+    <Suspense
+      fallback={
+        <PageShell header={<SiteHeader pageName="Communities" />}>
+          <div className="flex-1 overflow-auto">
+            <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+          </div>
+        </PageShell>
+      }
+    >
+      <CommunitiesPage />
+    </Suspense>
+  )
+}
+
+function CommunitiesPage() {
   const activeUser = useActiveUser()
+  const searchParams = useSearchParams()
+  const initialTab =
+    searchParams?.get("tab") === "discover"
+      ? "discover"
+      : searchParams?.get("tab") === "invites"
+        ? "invites"
+        : "mine"
+  const [activeTab, setActiveTab] = React.useState<
+    "mine" | "discover" | "invites"
+  >(initialTab)
 
   const skip = activeUser.isDevMode
     ? !activeUser.devUserId
@@ -61,6 +99,10 @@ export default function Page() {
 
   const myCommunities = useQuery(
     api.communities.listMyCommunities,
+    skip ? "skip" : identityArg,
+  )
+  const pendingInvites = useQuery(
+    api.communityInvites.listMyPendingInvites,
     skip ? "skip" : identityArg,
   )
 
@@ -155,7 +197,13 @@ export default function Page() {
             </Button>
           </div>
 
-          <Tabs defaultValue="mine" className="flex-1">
+          <Tabs
+            value={activeTab}
+            onValueChange={(v) =>
+              setActiveTab(v as "mine" | "discover" | "invites")
+            }
+            className="flex-1"
+          >
             <TabsList>
               <TabsTrigger value="mine">
                 <UsersRoundIcon className="size-4 mr-1" />
@@ -164,6 +212,15 @@ export default function Page() {
               <TabsTrigger value="discover">
                 <CompassIcon className="size-4 mr-1" />
                 Discover
+              </TabsTrigger>
+              <TabsTrigger value="invites">
+                <MailIcon className="size-4 mr-1" />
+                Invites
+                {pendingInvites && pendingInvites.length > 0 && (
+                  <Badge variant="secondary" className="ml-1.5">
+                    {pendingInvites.length}
+                  </Badge>
+                )}
               </TabsTrigger>
             </TabsList>
 
@@ -380,9 +437,175 @@ export default function Page() {
                 </div>
               )}
             </TabsContent>
+
+            <TabsContent value="invites" className="mt-4">
+              <InvitesTabPanel />
+            </TabsContent>
           </Tabs>
         </div>
       </div>
     </PageShell>
+  )
+}
+
+// Pending community invites for the current viewer. Shows each invite as a
+// rich card with accept / decline buttons. The notification bell drops
+// users here via `?tab=invites`.
+function InvitesTabPanel() {
+  const activeUser = useActiveUser()
+  const skip = activeUser.isDevMode
+    ? !activeUser.devUserId
+    : !activeUser.isLoaded
+  const identityArg =
+    activeUser.isDevMode && activeUser.devUserId
+      ? { devUserId: activeUser.devUserId }
+      : {}
+
+  const pending = useQuery(
+    api.communityInvites.listMyPendingInvites,
+    skip ? "skip" : identityArg,
+  )
+  const accept = useIdentifiedMutation(api.communityInvites.acceptInvite)
+  const decline = useIdentifiedMutation(api.communityInvites.declineInvite)
+  const [busyId, setBusyId] =
+    React.useState<Id<"communityInvites"> | null>(null)
+
+  async function handleAccept(
+    inviteId: Id<"communityInvites">,
+    name: string,
+  ) {
+    setBusyId(inviteId)
+    try {
+      await accept({ inviteId })
+      toast.success(`Joined ${name}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed")
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function handleDecline(
+    inviteId: Id<"communityInvites">,
+    name: string,
+  ) {
+    setBusyId(inviteId)
+    try {
+      await decline({ inviteId })
+      toast.success(`Declined invite to ${name}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed")
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  if (pending === undefined) {
+    return <p className="text-sm text-muted-foreground">Loading…</p>
+  }
+  if (pending.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed p-8 text-center">
+        <MailIcon className="mx-auto size-8 text-muted-foreground" />
+        <p className="mt-3 text-sm font-medium">No pending invites</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          When a community admin invites you, it shows up here.
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      {pending.map(({ invite, community, invitedByName }) => {
+        if (!community) return null
+        const busy = busyId === invite._id
+        return (
+          <div
+            key={invite._id}
+            className="flex flex-col overflow-hidden rounded-lg border bg-card"
+          >
+            {community.coverImageUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={community.coverImageUrl}
+                alt=""
+                className="h-20 w-full object-cover"
+                loading="lazy"
+              />
+            ) : (
+              <div className="h-16 w-full bg-gradient-to-br from-emerald-400 via-teal-500 to-cyan-500" />
+            )}
+            <div className="flex-1 p-4">
+              <div className="flex items-start gap-3">
+                {community.avatarUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={community.avatarUrl}
+                    alt=""
+                    className="size-10 rounded-md border object-cover"
+                  />
+                ) : (
+                  <div className="flex size-10 items-center justify-center rounded-md border bg-gradient-to-br from-emerald-400 to-teal-600 text-xs font-semibold text-white">
+                    {community.name
+                      .split(" ")
+                      .map((n) => n[0])
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .join("")
+                      .toUpperCase()}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <Link
+                    href={`/dashboard/communities/${community.slug}`}
+                    className="block truncate font-medium hover:underline"
+                  >
+                    {community.name}
+                  </Link>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <UsersIcon className="size-3" />
+                      {community.memberCount}
+                    </span>
+                    <Badge variant="outline" className="text-[10px]">
+                      {community.category}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+              {community.description && (
+                <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
+                  {community.description}
+                </p>
+              )}
+              <p className="mt-2 flex items-center gap-1 text-[11px] text-muted-foreground">
+                <MapPinIcon className="size-3" />
+                Invited by {invitedByName ?? "an admin"}
+              </p>
+            </div>
+            <div className="flex gap-2 border-t p-3">
+              <Button
+                size="sm"
+                className="flex-1"
+                disabled={busy}
+                onClick={() => handleAccept(invite._id, community.name)}
+              >
+                Accept
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="flex-1"
+                disabled={busy}
+                onClick={() => handleDecline(invite._id, community.name)}
+              >
+                Decline
+              </Button>
+            </div>
+          </div>
+        )
+      })}
+    </div>
   )
 }

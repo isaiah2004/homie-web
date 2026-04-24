@@ -8,10 +8,14 @@ import { toast } from "sonner"
 import {
   ArrowLeftIcon,
   CheckIcon,
+  CopyIcon,
   MapPinIcon,
   MegaphoneIcon,
   MinusCircleIcon,
   MoreHorizontalIcon,
+  SearchIcon,
+  UserPlusIcon,
+  UsersIcon,
   XIcon,
 } from "lucide-react"
 
@@ -27,8 +31,19 @@ import { SiteHeader } from "@/components/site-header"
 import { PageShell } from "@/components/dashboard-layout"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -104,6 +119,12 @@ export default function Page() {
   )
   const events = useQuery(
     api.events.listEventsForCommunity,
+    skip || !community || !isAdmin
+      ? "skip"
+      : { communityId: community._id, ...identityArg },
+  )
+  const invites = useQuery(
+    api.communityInvites.listInvitesForCommunity,
     skip || !community || !isAdmin
       ? "skip"
       : { communityId: community._id, ...identityArg },
@@ -237,6 +258,14 @@ export default function Page() {
                 )}
               </TabsTrigger>
               <TabsTrigger value="members">Members</TabsTrigger>
+              <TabsTrigger value="invites">
+                Invites
+                {invites && invites.length > 0 && (
+                  <Badge variant="secondary" className="ml-2">
+                    {invites.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
               <TabsTrigger value="events">Events</TabsTrigger>
               <TabsTrigger value="ads">Ads</TabsTrigger>
             </TabsList>
@@ -383,6 +412,10 @@ export default function Page() {
                   </ul>
                 )}
               </div>
+            </TabsContent>
+
+            <TabsContent value="invites" className="mt-4">
+              <InvitesTab community={community} />
             </TabsContent>
 
             <TabsContent value="events" className="mt-4">
@@ -647,5 +680,702 @@ function AdsTab({
         </div>
       )}
     </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Invites tab
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Pending-invite list + Add / Bulk-add actions. Admin-only (enforced on the
+// server too; this component is only rendered when `isAdmin === true`).
+function InvitesTab({ community }: { community: Doc<"communities"> }) {
+  const activeUser = useActiveUser()
+  const skip = activeUser.isDevMode
+    ? !activeUser.devUserId
+    : !activeUser.isLoaded
+  const identityArg =
+    activeUser.isDevMode && activeUser.devUserId
+      ? { devUserId: activeUser.devUserId }
+      : {}
+
+  const invites = useQuery(
+    api.communityInvites.listInvitesForCommunity,
+    skip ? "skip" : { communityId: community._id, ...identityArg },
+  )
+  const cancelInvite = useIdentifiedMutation(
+    api.communityInvites.cancelInvite,
+  )
+
+  const [addOpen, setAddOpen] = React.useState(false)
+  const [bulkOpen, setBulkOpen] = React.useState(false)
+
+  async function handleCancel(inviteId: Id<"communityInvites">, name: string) {
+    if (!confirm(`Revoke invite for ${name}?`)) return
+    try {
+      await cancelInvite({ inviteId })
+      toast.success("Invite revoked")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed")
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Button size="sm" onClick={() => setAddOpen(true)}>
+          <UserPlusIcon className="size-4" />
+          Add
+        </Button>
+        <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
+          <UsersIcon className="size-4" />
+          Bulk add
+        </Button>
+      </div>
+
+      <div className="rounded-lg border bg-card">
+        {invites === undefined ? (
+          <p className="p-6 text-center text-sm text-muted-foreground">
+            Loading…
+          </p>
+        ) : invites.length === 0 ? (
+          <p className="p-6 text-center text-sm text-muted-foreground">
+            No pending invites. Use{" "}
+            <span className="font-medium">Add</span> or{" "}
+            <span className="font-medium">Bulk add</span> to invite people.
+          </p>
+        ) : (
+          <ul className="divide-y">
+            {invites.map(({ invite, invitee, invitedByName }) => (
+              <li
+                key={invite._id}
+                className="flex items-start gap-3 p-4"
+              >
+                <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 text-xs font-semibold text-white">
+                  {initials(invitee?.name ?? "?")}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">
+                    {invitee?.name ?? "Unknown user"}
+                  </p>
+                  {invitee?.username && (
+                    <p className="truncate text-xs text-muted-foreground">
+                      @{invitee.username}
+                    </p>
+                  )}
+                  {invitee?.email && (
+                    <p className="truncate text-xs text-muted-foreground">
+                      {invitee.email}
+                    </p>
+                  )}
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    Invited by {invitedByName ?? "someone"} ·{" "}
+                    {new Date(invite.createdAt).toLocaleString()}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    handleCancel(
+                      invite._id,
+                      invitee?.name ?? "this person",
+                    )
+                  }
+                >
+                  <XIcon className="size-4" />
+                  Revoke
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <AddInviteDialog
+        community={community}
+        open={addOpen}
+        onOpenChange={setAddOpen}
+        existingInviteeIds={
+          new Set((invites ?? []).map((i) => i.invite.userId))
+        }
+      />
+      <BulkAddInviteDialog
+        community={community}
+        open={bulkOpen}
+        onOpenChange={setBulkOpen}
+      />
+    </div>
+  )
+}
+
+// Single-user invite dialog. Debounced search across name / username /
+// email via `users.searchDiscoverable`. Clicking a result sends the invite
+// immediately; the dialog stays open so the admin can queue more.
+function AddInviteDialog({
+  community,
+  open,
+  onOpenChange,
+  existingInviteeIds,
+}: {
+  community: Doc<"communities">
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  existingInviteeIds: Set<Id<"users">>
+}) {
+  const activeUser = useActiveUser()
+  const skip = activeUser.isDevMode
+    ? !activeUser.devUserId
+    : !activeUser.isLoaded
+  const identityArg =
+    activeUser.isDevMode && activeUser.devUserId
+      ? { devUserId: activeUser.devUserId }
+      : {}
+
+  const [query, setQuery] = React.useState("")
+  const [debounced, setDebounced] = React.useState("")
+  const [pendingIds, setPendingIds] = React.useState<Set<Id<"users">>>(
+    () => new Set(),
+  )
+
+  React.useEffect(() => {
+    const handle = setTimeout(() => setDebounced(query.trim()), 200)
+    return () => clearTimeout(handle)
+  }, [query])
+
+  React.useEffect(() => {
+    if (!open) {
+      setQuery("")
+      setDebounced("")
+      setPendingIds(new Set())
+    }
+  }, [open])
+
+  const members = useQuery(
+    api.communityMembers.listMembers,
+    skip || !open
+      ? "skip"
+      : { communityId: community._id, ...identityArg },
+  )
+  const memberIds = React.useMemo(
+    () => new Set((members?.members ?? []).map((m) => m.membership.userId)),
+    [members],
+  )
+
+  const excludeIds = React.useMemo(() => {
+    const out: Id<"users">[] = []
+    for (const id of memberIds) out.push(id)
+    for (const id of existingInviteeIds) {
+      if (!memberIds.has(id)) out.push(id)
+    }
+    return out
+  }, [memberIds, existingInviteeIds])
+
+  const results = useQuery(
+    api.users.searchDiscoverable,
+    skip || !open || debounced.length === 0
+      ? "skip"
+      : { query: debounced, excludeUserIds: excludeIds, limit: 15 },
+  )
+
+  const invite = useIdentifiedMutation(api.communityInvites.inviteUser)
+
+  async function handleInvite(userId: Id<"users">, name: string) {
+    setPendingIds((prev) => {
+      const next = new Set(prev)
+      next.add(userId)
+      return next
+    })
+    try {
+      const res = await invite({
+        communityId: community._id,
+        targetUserId: userId,
+      })
+      if ("alreadyMember" in res && res.alreadyMember) {
+        toast.info(`${name} is already a member`)
+      } else if ("alreadyInvited" in res && res.alreadyInvited) {
+        toast.info(`${name} is already invited`)
+      } else {
+        toast.success(`Invited ${name}`)
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to invite")
+      setPendingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(userId)
+        return next
+      })
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Invite someone to {community.name}</DialogTitle>
+          <DialogDescription>
+            Search by name, username, or email. Click a result to send the
+            invite.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="relative">
+          <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search people…"
+            className="pl-9"
+          />
+        </div>
+
+        <div className="max-h-80 overflow-auto rounded-md border">
+          {debounced.length === 0 ? (
+            <p className="p-4 text-center text-xs text-muted-foreground">
+              Type at least one character to search.
+            </p>
+          ) : results === undefined ? (
+            <p className="p-4 text-center text-xs text-muted-foreground">
+              Searching…
+            </p>
+          ) : results.length === 0 ? (
+            <p className="p-4 text-center text-xs text-muted-foreground">
+              No matches.
+            </p>
+          ) : (
+            <ul className="divide-y">
+              {results.map((u) => {
+                const pending = pendingIds.has(u._id)
+                return (
+                  <li
+                    key={u._id}
+                    className="flex items-center gap-3 p-3"
+                  >
+                    <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-purple-600 text-xs font-semibold text-white">
+                      {initials(u.name)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">
+                        {u.name}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {u.username ? `@${u.username}` : u.email}
+                      </p>
+                    </div>
+                    <Button
+                      size="sm"
+                      disabled={pending}
+                      onClick={() => handleInvite(u._id, u.name)}
+                    >
+                      {pending ? "Invited" : "Invite"}
+                    </Button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Done
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// Bulk-invite dialog. Flow:
+//   step "input"   — pick emails vs usernames, paste the list, hit Resolve
+//   step "confirm" — show classification (matches / members / invited /
+//                    misses), click Confirm to actually send invites
+//   step "done"    — show the final counts + any misses with a Copy button
+function BulkAddInviteDialog({
+  community,
+  open,
+  onOpenChange,
+}: {
+  community: Doc<"communities">
+  open: boolean
+  onOpenChange: (v: boolean) => void
+}) {
+  const activeUser = useActiveUser()
+  const skip = activeUser.isDevMode
+    ? !activeUser.devUserId
+    : !activeUser.isLoaded
+  const identityArg =
+    activeUser.isDevMode && activeUser.devUserId
+      ? { devUserId: activeUser.devUserId }
+      : {}
+
+  type Kind = "email" | "username"
+  type Step = "input" | "confirm" | "done"
+
+  const [kind, setKind] = React.useState<Kind>("email")
+  const [text, setText] = React.useState("")
+  const [step, setStep] = React.useState<Step>("input")
+  const [resolved, setResolved] = React.useState<{
+    matches: Array<{
+      entry: string
+      userId: Id<"users">
+      name: string
+      username: string | null
+      email: string
+    }>
+    alreadyMembers: string[]
+    alreadyInvited: string[]
+    misses: string[]
+  } | null>(null)
+  const [submitting, setSubmitting] = React.useState(false)
+  const [finalReport, setFinalReport] = React.useState<{
+    invitedCount: number
+    alreadyMembers: string[]
+    alreadyInvited: string[]
+    misses: string[]
+  } | null>(null)
+
+  // Reset state whenever the dialog closes.
+  React.useEffect(() => {
+    if (!open) {
+      setKind("email")
+      setText("")
+      setStep("input")
+      setResolved(null)
+      setSubmitting(false)
+      setFinalReport(null)
+    }
+  }, [open])
+
+  const entries = React.useMemo(
+    () =>
+      text
+        .split(/[\s,]+/)
+        .map((e) => e.trim().replace(/^@+/, ""))
+        .filter(Boolean),
+    [text],
+  )
+  const dedupedEntries = React.useMemo(() => {
+    const seen = new Set<string>()
+    const out: string[] = []
+    for (const e of entries) {
+      const lc = e.toLowerCase()
+      if (seen.has(lc)) continue
+      seen.add(lc)
+      out.push(lc)
+    }
+    return out
+  }, [entries])
+
+  const resolvePreview = useQuery(
+    api.communityInvites.resolveInviteList,
+    skip || step !== "confirm" || dedupedEntries.length === 0
+      ? "skip"
+      : {
+          communityId: community._id,
+          kind,
+          entries: dedupedEntries,
+          ...identityArg,
+        },
+  )
+
+  // When the confirm-step query finishes, snapshot it so we can send the
+  // confirmed mutation with exactly the displayed numbers.
+  React.useEffect(() => {
+    if (step === "confirm" && resolvePreview) {
+      setResolved(resolvePreview)
+    }
+  }, [step, resolvePreview])
+
+  const inviteByEmail = useIdentifiedMutation(
+    api.communityInvites.inviteManyByEmail,
+  )
+  const inviteByUsername = useIdentifiedMutation(
+    api.communityInvites.inviteManyByUsername,
+  )
+
+  async function handleResolve() {
+    if (dedupedEntries.length === 0) {
+      toast.error("Paste at least one entry")
+      return
+    }
+    if (dedupedEntries.length > 200) {
+      toast.error("Max 200 entries per batch")
+      return
+    }
+    setStep("confirm")
+  }
+
+  async function handleConfirm() {
+    if (!resolved) return
+    setSubmitting(true)
+    try {
+      const res =
+        kind === "email"
+          ? await inviteByEmail({
+              communityId: community._id,
+              emails: resolved.matches.map((m) => m.email),
+            })
+          : await inviteByUsername({
+              communityId: community._id,
+              usernames: resolved.matches
+                .map((m) => m.username)
+                .filter((u): u is string => typeof u === "string"),
+            })
+      setFinalReport({
+        invitedCount: res.invited.length,
+        alreadyMembers: res.alreadyMembers,
+        alreadyInvited: res.alreadyInvited,
+        misses: res.misses,
+      })
+      setStep("done")
+      toast.success(
+        `Invited ${res.invited.length} ${
+          res.invited.length === 1 ? "person" : "people"
+        }`,
+      )
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  async function copyMisses() {
+    const misses = finalReport?.misses ?? resolved?.misses ?? []
+    if (misses.length === 0) return
+    try {
+      await navigator.clipboard.writeText(misses.join("\n"))
+      toast.success("Copied misses to clipboard")
+    } catch {
+      toast.error("Clipboard not available")
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Bulk invite to {community.name}</DialogTitle>
+          <DialogDescription>
+            Paste up to 200 entries. We&apos;ll resolve them before any
+            invites go out.
+          </DialogDescription>
+        </DialogHeader>
+
+        {step === "input" && (
+          <div className="space-y-3">
+            <div>
+              <p className="mb-1.5 text-xs font-medium text-muted-foreground">
+                Identify people by:
+              </p>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                value={kind}
+                onValueChange={(v) => v && setKind(v as Kind)}
+              >
+                <ToggleGroupItem value="email">Emails</ToggleGroupItem>
+                <ToggleGroupItem value="username">Usernames</ToggleGroupItem>
+              </ToggleGroup>
+            </div>
+
+            <div>
+              <label
+                htmlFor="bulk-invite-textarea"
+                className="mb-1.5 block text-xs font-medium text-muted-foreground"
+              >
+                {kind === "email"
+                  ? "Emails (one per line; commas and spaces also work)"
+                  : "Usernames (one per line; leading @ is fine)"}
+              </label>
+              <Textarea
+                id="bulk-invite-textarea"
+                rows={6}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder={
+                  kind === "email"
+                    ? "alex@example.com\njamie@example.com\n…"
+                    : "@alex\njamie\n…"
+                }
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                {dedupedEntries.length} unique{" "}
+                {dedupedEntries.length === 1 ? "entry" : "entries"}
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleResolve}
+                disabled={dedupedEntries.length === 0}
+              >
+                Next
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+
+        {step === "confirm" && (
+          <div className="space-y-3">
+            {resolvePreview === undefined ? (
+              <p className="p-6 text-center text-sm text-muted-foreground">
+                Resolving…
+              </p>
+            ) : (
+              <>
+                <div className="rounded-md border p-3 text-sm">
+                  <p>
+                    Found{" "}
+                    <span className="font-semibold">
+                      {resolvePreview.matches.length}
+                    </span>{" "}
+                    {resolvePreview.matches.length === 1
+                      ? "match"
+                      : "matches"}
+                    ,{" "}
+                    <span className="font-semibold">
+                      {resolvePreview.alreadyMembers.length}
+                    </span>{" "}
+                    already{" "}
+                    {resolvePreview.alreadyMembers.length === 1
+                      ? "member"
+                      : "members"}
+                    ,{" "}
+                    <span className="font-semibold">
+                      {resolvePreview.alreadyInvited.length}
+                    </span>{" "}
+                    already invited, and{" "}
+                    <span className="font-semibold">
+                      {resolvePreview.misses.length}
+                    </span>{" "}
+                    {resolvePreview.misses.length === 1
+                      ? "miss"
+                      : "misses"}
+                    .
+                  </p>
+                </div>
+
+                {resolvePreview.matches.length > 0 && (
+                  <div className="max-h-48 overflow-auto rounded-md border">
+                    <ul className="divide-y">
+                      {resolvePreview.matches.map((m) => (
+                        <li
+                          key={m.userId}
+                          className="flex items-center gap-2 px-3 py-2 text-sm"
+                        >
+                          <CheckIcon className="size-4 text-emerald-500" />
+                          <span className="truncate">{m.name}</span>
+                          <span className="truncate text-xs text-muted-foreground">
+                            {m.username ? `@${m.username}` : m.email}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {resolvePreview.misses.length > 0 && (
+                  <div className="rounded-md border bg-muted/30 p-3">
+                    <p className="text-xs font-medium">
+                      {resolvePreview.misses.length}{" "}
+                      {resolvePreview.misses.length === 1
+                        ? "entry"
+                        : "entries"}{" "}
+                      didn&apos;t match a user:
+                    </p>
+                    <p className="mt-1 max-h-24 overflow-auto whitespace-pre-wrap break-all text-[11px] text-muted-foreground">
+                      {resolvePreview.misses.join("\n")}
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setStep("input")}
+                disabled={submitting}
+              >
+                Back
+              </Button>
+              <Button
+                onClick={handleConfirm}
+                disabled={
+                  submitting ||
+                  !resolvePreview ||
+                  resolvePreview.matches.length === 0
+                }
+              >
+                {submitting
+                  ? "Sending…"
+                  : `Invite ${resolvePreview?.matches.length ?? 0}`}
+              </Button>
+            </DialogFooter>
+          </div>
+        )}
+
+        {step === "done" && finalReport && (
+          <div className="space-y-3">
+            <div className="rounded-md border bg-emerald-50 p-3 text-sm dark:bg-emerald-950/30">
+              Invited{" "}
+              <span className="font-semibold">
+                {finalReport.invitedCount}
+              </span>{" "}
+              {finalReport.invitedCount === 1 ? "person" : "people"}.
+              {finalReport.alreadyMembers.length > 0 && (
+                <>
+                  {" "}
+                  Skipped{" "}
+                  {finalReport.alreadyMembers.length} already{" "}
+                  {finalReport.alreadyMembers.length === 1
+                    ? "member"
+                    : "members"}
+                  .
+                </>
+              )}
+              {finalReport.alreadyInvited.length > 0 && (
+                <>
+                  {" "}
+                  Skipped {finalReport.alreadyInvited.length} already
+                  invited.
+                </>
+              )}
+            </div>
+
+            {finalReport.misses.length > 0 && (
+              <div className="rounded-md border p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-xs font-medium">
+                    {finalReport.misses.length}{" "}
+                    {finalReport.misses.length === 1 ? "miss" : "misses"}
+                  </p>
+                  <Button size="sm" variant="outline" onClick={copyMisses}>
+                    <CopyIcon className="size-3.5" />
+                    Copy
+                  </Button>
+                </div>
+                <p className="mt-2 max-h-32 overflow-auto whitespace-pre-wrap break-all text-[11px] text-muted-foreground">
+                  {finalReport.misses.join("\n")}
+                </p>
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button onClick={() => onOpenChange(false)}>Done</Button>
+            </DialogFooter>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }

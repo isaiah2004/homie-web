@@ -56,6 +56,8 @@ function typeLabel(type: Doc<"notifications">["type"]): string {
       return "Request declined"
     case "community_announcement":
       return "Announcement"
+    case "community_invite":
+      return "Community invite"
     case "community_role_changed":
     case "business_role_changed":
       return "Role changed"

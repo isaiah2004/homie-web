@@ -24,6 +24,7 @@ import type * as cheapShark from "../cheapShark.js";
 import type * as communities from "../communities.js";
 import type * as communityAds from "../communityAds.js";
 import type * as communityAnnouncements from "../communityAnnouncements.js";
+import type * as communityInvites from "../communityInvites.js";
 import type * as communityMembers from "../communityMembers.js";
 import type * as communityPolls from "../communityPolls.js";
 import type * as conversationMessages from "../conversationMessages.js";
@@ -86,6 +87,7 @@ declare const fullApi: ApiFromModules<{
   communities: typeof communities;
   communityAds: typeof communityAds;
   communityAnnouncements: typeof communityAnnouncements;
+  communityInvites: typeof communityInvites;
   communityMembers: typeof communityMembers;
   communityPolls: typeof communityPolls;
   conversationMessages: typeof conversationMessages;
