@@ -2,6 +2,7 @@ import { mutation, query, internalQuery, internalMutation, QueryCtx } from "./_g
 import { v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
+import { resolveIdentity } from "./lib/identity";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Visibility helpers — used by `getUserForViewer` to filter profile content
@@ -413,9 +414,12 @@ export const getOrCreateUser = mutation({
       if (args.name && args.name.trim() && args.name !== existingUser.name) {
         patch.name = args.name.trim();
       }
-      // Same story for avatar — Clerk hosts the image and is the source of
-      // truth; we just mirror the URL here for UI that renders from Convex.
-      if (args.avatar && args.avatar !== existingUser.avatar) {
+      // Avatar: only backfill from Clerk when the Convex row has no avatar
+      // yet. Once the user has set a custom avatar (via R2 upload in
+      // /dashboard/profile, see `setAvatar` below), we NEVER clobber it on
+      // subsequent bootstraps — otherwise the next dashboard load would
+      // silently restore the stale Clerk URL and wipe out the upload.
+      if (args.avatar && !existingUser.avatar) {
         patch.avatar = args.avatar;
       }
       // Backfill accountType for pre-existing rows that never had the
@@ -457,6 +461,42 @@ export const getOrCreateUser = mutation({
     });
 
     return userId;
+  },
+});
+
+// Set the authenticated caller's avatar. Used by `/dashboard/profile` →
+// `<ProfilePhotoUpload />` after the browser uploads the image directly to
+// R2 via `api.r2.generateUploadUrl`. The caller identity is derived server-
+// side via `resolveIdentity` (prod Clerk or dev switcher) — never accept a
+// target `userId` as an arg, otherwise a malicious client could set someone
+// else's avatar.
+//
+// `avatar` is a plain string URL. Pass `null` to clear the avatar (falls
+// back to the initials placeholder in the UI). We accept `v.union(v.string,
+// v.null)` rather than `v.optional(v.string)` so a null value actually
+// round-trips to Convex — `undefined` would be dropped by the arg validator.
+export const setAvatar = mutation({
+  args: {
+    devUserId: v.optional(v.id("users")),
+    avatar: v.union(v.string(), v.null()),
+  },
+  handler: async (ctx, { devUserId, avatar }) => {
+    const identity = await resolveIdentity(ctx, { devUserId });
+    const user = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", identity.email))
+      .unique();
+    if (!user) throw new Error("User not found for identity");
+    // Basic sanity check — the URL should at minimum look like an absolute
+    // URL. Skip the check when clearing (avatar === null).
+    if (avatar !== null) {
+      if (!/^https?:\/\//i.test(avatar)) {
+        throw new Error("Avatar URL must be http(s)");
+      }
+      if (avatar.length > 2048) throw new Error("Avatar URL is too long");
+    }
+    await ctx.db.patch(user._id, { avatar: avatar ?? undefined });
+    return user._id;
   },
 });
 

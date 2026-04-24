@@ -2,28 +2,35 @@
 
 import * as React from "react"
 import { toast } from "sonner"
-import { CameraIcon, Loader2Icon } from "lucide-react"
-import { useUser } from "@clerk/nextjs"
-import { useMutation } from "convex/react"
+import { CameraIcon, Loader2Icon, TrashIcon } from "lucide-react"
 
 import { api } from "@/convex/_generated/api"
+import { useActiveUser } from "@/hooks/use-active-user"
+import {
+  useIdentifiedAction,
+  useIdentifiedMutation,
+} from "@/hooks/use-identified"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 
-// <ProfilePhotoUpload /> — avatar display + upload button for the profile form.
+// <ProfilePhotoUpload /> — avatar display + upload button for the profile
+// form. Uses the same R2 pipeline as DM attachments and community images:
+//   1. `api.r2.generateUploadUrl` mints a presigned PUT URL
+//   2. Browser PUTs the file directly to R2
+//   3. `api.attachments.finalizeUpload` records the file (idempotent)
+//   4. `api.users.setAvatar` writes the public URL to `users.avatar`
 //
-// Identity + photo hosting are owned by Clerk; Convex `users.avatar` just
-// mirrors the Clerk `user.imageUrl` so friends lists / chat bubbles / etc.
-// can read from Convex without a second round-trip. On upload we push the
-// file through Clerk, wait for it to resolve, then call `getOrCreateUser`
-// to re-mirror the new URL into Convex.
+// Clerk's own `user.setProfileImage` is intentionally bypassed — our app
+// reads `users.avatar` everywhere (friends lists, chat bubbles, nav,
+// etc.), and Clerk's image upload was unreliable for some users. R2 gives
+// us a stable URL we control. ConvexUserBootstrap now only backfills the
+// Clerk imageUrl when `users.avatar` is empty so we never clobber an
+// uploaded photo on subsequent sign-ins.
 //
-// Dev mode: Clerk isn't mounted, so we render a read-only avatar sourced
-// from the seeded Convex row and a note explaining why editing is off.
+// Dev mode: `generateUploadUrl` accepts `devUserId` via `useIdentifiedAction`
+// so the switcher's seeded user gets to upload too — nothing special here.
 
-const isDevMode = process.env.NEXT_PUBLIC_DEV_MODE === "true"
-
-const MAX_BYTES = 5 * 1024 * 1024 // 5 MB — matches Clerk's default upload cap.
+const MAX_BYTES = 5 * 1024 * 1024 // 5 MB — keep parity with Clerk's old cap.
 
 function initials(name: string | null | undefined): string {
   if (!name) return "?"
@@ -32,59 +39,57 @@ function initials(name: string | null | undefined): string {
   return parts.map((s) => s[0]!.toUpperCase()).join("")
 }
 
+function readImageDimensions(
+  file: File,
+): Promise<{ width: number; height: number } | null> {
+  if (!file.type.startsWith("image/")) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const img = new Image()
+    img.onload = () => {
+      resolve({ width: img.naturalWidth, height: img.naturalHeight })
+      URL.revokeObjectURL(url)
+    }
+    img.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve(null)
+    }
+    img.src = url
+  })
+}
+
 type Props = {
-  // Passed through in dev mode where Clerk isn't available.
+  // Kept for API compatibility with the previous Clerk-based component.
+  // When set, these seed the initial preview before `useActiveUser` loads
+  // — useful for dev mode where no Clerk user is mounted.
   devAvatar?: string | null
   devName?: string | null
 }
 
 export function ProfilePhotoUpload({ devAvatar, devName }: Props) {
-  if (isDevMode) {
-    return <DevAvatar avatar={devAvatar} name={devName} />
-  }
-  return <ClerkAvatar />
-}
+  const activeUser = useActiveUser()
+  const generateUploadUrl = useIdentifiedAction(api.r2.generateUploadUrl)
+  const finalizeUpload = useIdentifiedMutation(api.attachments.finalizeUpload)
+  const setAvatar = useIdentifiedMutation(api.users.setAvatar)
 
-function DevAvatar({
-  avatar,
-  name,
-}: {
-  avatar?: string | null
-  name?: string | null
-}) {
-  return (
-    <div className="flex items-center gap-4">
-      <Avatar className="size-20">
-        {avatar ? (
-          <AvatarImage src={avatar} alt={name ?? "User avatar"} />
-        ) : null}
-        <AvatarFallback className="text-lg">{initials(name)}</AvatarFallback>
-      </Avatar>
-      <div>
-        <p className="text-sm font-medium">Profile photo</p>
-        <p className="text-xs text-muted-foreground">
-          Photo upload is disabled in dev mode.
-        </p>
-      </div>
-    </div>
-  )
-}
-
-function ClerkAvatar() {
-  const { user, isLoaded } = useUser()
-  const getOrCreateUser = useMutation(api.users.getOrCreateUser)
-  const [uploading, setUploading] = React.useState(false)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const [uploading, setUploading] = React.useState(false)
 
-  const imageUrl = user?.imageUrl
-  const name = user?.fullName ?? null
-  const email = user?.primaryEmailAddress?.emailAddress
+  // Prefer the live activeUser values; fall back to the dev props the
+  // host form passes in for the first render. This keeps the preview in
+  // sync when `setAvatar` completes and `useActiveUser` re-fetches the
+  // Convex row.
+  const avatar = activeUser.avatar ?? devAvatar ?? null
+  const name = activeUser.fullName ?? devName ?? null
+  const canEdit = activeUser.isDevMode
+    ? !!activeUser.devUserId
+    : activeUser.isLoaded
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
-    // Reset so the same file can be re-picked if the upload fails.
+    // Reset so the same file can be re-picked if upload fails.
     e.target.value = ""
-    if (!file || !user || !email) return
+    if (!file) return
 
     if (!file.type.startsWith("image/")) {
       toast.error("Please pick an image file.")
@@ -97,18 +102,35 @@ function ClerkAvatar() {
 
     setUploading(true)
     try {
-      await user.setProfileImage({ file })
-      // Clerk has updated; `user.imageUrl` now reflects the new CDN URL.
-      // Mirror it into Convex so anywhere in the app that reads
-      // `users.avatar` picks up the new photo without needing a separate
-      // Clerk call.
-      await getOrCreateUser({
-        email,
-        avatar: user.imageUrl || undefined,
+      const dims = await readImageDimensions(file)
+      const { uploadUrl, publicUrl, key } = await generateUploadUrl({
+        fileName: file.name,
+        contentType: file.type,
+        size: file.size,
       })
+      const res = await fetch(uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type },
+        body: file,
+      })
+      if (!res.ok) {
+        throw new Error(`Upload failed (${res.status})`)
+      }
+      // Finalize inserts the attachments row (also gives us server-side
+      // size/type re-validation). We then write the public URL to the
+      // users row so everywhere in the app picks it up.
+      await finalizeUpload({
+        key,
+        fileName: file.name,
+        contentType: file.type,
+        size: file.size,
+        width: dims?.width,
+        height: dims?.height,
+      })
+      await setAvatar({ avatar: publicUrl })
       toast.success("Profile photo updated!")
     } catch (err) {
-      console.error("Failed to update profile photo", err)
+      console.error("ProfilePhotoUpload: failed", err)
       toast.error(
         err instanceof Error ? err.message : "Failed to update profile photo.",
       )
@@ -117,12 +139,23 @@ function ClerkAvatar() {
     }
   }
 
+  async function handleRemove() {
+    if (!confirm("Remove your profile photo?")) return
+    setUploading(true)
+    try {
+      await setAvatar({ avatar: null })
+      toast.success("Profile photo removed")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to remove")
+    } finally {
+      setUploading(false)
+    }
+  }
+
   return (
     <div className="flex items-center gap-4">
       <Avatar className="size-20">
-        {imageUrl ? (
-          <AvatarImage src={imageUrl} alt={name ?? "User avatar"} />
-        ) : null}
+        {avatar ? <AvatarImage src={avatar} alt={name ?? "User avatar"} /> : null}
         <AvatarFallback className="text-lg">{initials(name)}</AvatarFallback>
       </Avatar>
       <div className="flex flex-col gap-1">
@@ -135,7 +168,7 @@ function ClerkAvatar() {
             type="button"
             variant="outline"
             size="sm"
-            disabled={!isLoaded || !user || uploading}
+            disabled={!canEdit || uploading}
             onClick={() => fileInputRef.current?.click()}
           >
             {uploading ? (
@@ -145,6 +178,18 @@ function ClerkAvatar() {
             )}
             {uploading ? "Uploading…" : "Change photo"}
           </Button>
+          {avatar && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={!canEdit || uploading}
+              onClick={handleRemove}
+            >
+              <TrashIcon className="mr-1 size-4" />
+              Remove
+            </Button>
+          )}
         </div>
         <input
           ref={fileInputRef}

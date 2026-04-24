@@ -5,8 +5,6 @@ import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { useQuery } from "convex/react"
 import { toast } from "sonner"
-import ReactMarkdown from "react-markdown"
-import remarkGfm from "remark-gfm"
 import {
   ArrowLeftIcon,
   CalendarPlusIcon,
@@ -29,6 +27,7 @@ import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { AdCard } from "@/components/ad-card"
+import { AnnouncementBody } from "@/components/app-ui/AnnouncementBody"
 import { SiteHeader } from "@/components/site-header"
 import { PageShell } from "@/components/dashboard-layout"
 import { Badge } from "@/components/ui/badge"
@@ -405,11 +404,12 @@ export default function Page() {
                               )}
                             </div>
                           </div>
-                          <div className="prose prose-sm dark:prose-invert mt-1 max-w-none">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {row.announcement.body}
-                            </ReactMarkdown>
-                          </div>
+                          <AnnouncementBody
+                            className="mt-1"
+                            body={row.announcement.body}
+                            format={row.announcement.format}
+                            attachments={row.announcement.attachments}
+                          />
                           <p className="mt-2 text-[10px] text-muted-foreground">
                             {row.author?.name ?? "Unknown"} ·{" "}
                             {new Date(

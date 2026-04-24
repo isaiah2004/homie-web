@@ -19,7 +19,6 @@ import { SiteHeader } from "@/components/site-header"
 import { PageShell } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Field,
   FieldDescription,
@@ -27,10 +26,13 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field"
+import {
+  AnnouncementComposer,
+  type AnnouncementComposerHandle,
+} from "@/components/app-ui/AnnouncementComposer"
 
 const formSchema = z.object({
   title: z.string().trim().min(2, "Title must be at least 2 characters"),
-  body: z.string().trim().min(1, "Body is required"),
   pinned: z.boolean().optional(),
 })
 
@@ -71,8 +73,15 @@ export default function Page() {
   } = useForm<FormValues>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     resolver: zodResolver(formSchema as any),
-    defaultValues: { title: "", body: "", pinned: false },
+    defaultValues: { title: "", pinned: false },
   })
+
+  const composerRef = React.useRef<AnnouncementComposerHandle | null>(null)
+  const [composerState, setComposerState] = React.useState<{
+    hasBody: boolean
+    attachmentsCount: number
+    uploading: boolean
+  }>({ hasBody: false, attachmentsCount: 0, uploading: false })
 
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
@@ -119,11 +128,28 @@ export default function Page() {
 
   async function onSubmit(values: FormValues) {
     if (!community) return
+    const snapshot = composerRef.current?.getState()
+    if (!snapshot) return
+    const plainText = snapshot.plainText.trim()
+    const hasAttachments = snapshot.attachments.length > 0
+    if (plainText.length === 0 && !hasAttachments) {
+      toast.error("Write a body or attach at least one file.")
+      return
+    }
+    if (composerState.uploading) {
+      toast.error("Wait for uploads to finish.")
+      return
+    }
     try {
       await postAnnouncement({
         communityId: community._id,
         title: values.title,
-        body: values.body,
+        // Always send the composer's HTML. Server accepts either format
+        // but we tag it explicitly so render-time picks the sanitizer.
+        body: snapshot.html,
+        format: "html",
+        attachments:
+          snapshot.attachments.length > 0 ? snapshot.attachments : undefined,
         pinned: values.pinned,
       })
       toast.success("Announcement posted")
@@ -132,6 +158,11 @@ export default function Page() {
       toast.error(err instanceof Error ? err.message : "Failed")
     }
   }
+
+  const canSubmit =
+    !isSubmitting &&
+    !composerState.uploading &&
+    (composerState.hasBody || composerState.attachmentsCount > 0)
 
   return (
     <PageShell header={<SiteHeader pageName="New Announcement" />}>
@@ -160,20 +191,22 @@ export default function Page() {
                   <FieldError errors={[errors.title]} />
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="body">Body (markdown)</FieldLabel>
-                  <Textarea
-                    id="body"
-                    rows={10}
-                    placeholder={
-                      "Hello! A few quick updates:\n\n- New time: **6am**\n- Meet at the East gate\n- Bring water"
+                  <FieldLabel>Body</FieldLabel>
+                  <AnnouncementComposer
+                    ref={composerRef}
+                    placeholder={"Write your announcement. Use the attach button to include images, videos, or files."}
+                    onChange={(s) =>
+                      setComposerState({
+                        hasBody: s.plainText.trim().length > 0,
+                        attachmentsCount: s.attachments.length,
+                        uploading: s.uploading,
+                      })
                     }
-                    {...register("body")}
                   />
                   <FieldDescription>
-                    Markdown is supported. Headings, lists, bold/italic,
-                    links, and tables all render.
+                    Formatting: bold, italics, links, and lists. Images,
+                    videos, and files upload to the community feed.
                   </FieldDescription>
-                  <FieldError errors={[errors.body]} />
                 </Field>
                 <Field>
                   <label className="inline-flex items-center gap-2 text-sm">
@@ -191,7 +224,7 @@ export default function Page() {
                       Cancel
                     </Link>
                   </Button>
-                  <Button type="submit" disabled={isSubmitting}>
+                  <Button type="submit" disabled={!canSubmit}>
                     {isSubmitting ? (
                       <>
                         <Loader2Icon className="size-4 animate-spin" />

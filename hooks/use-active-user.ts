@@ -114,9 +114,11 @@ function useActiveUserClerk(): ActiveUser {
     email,
     username: convexUser?.username ?? clerk.user?.username ?? null,
     fullName: convexUser?.name ?? clerk.user?.fullName ?? null,
-    // Prefer Clerk's live imageUrl — it updates immediately on upload,
-    // before the Convex mirror catches up.
-    avatar: clerk.user?.imageUrl ?? convexUser?.avatar ?? null,
+    // Prefer the Convex-stored avatar — that's what the R2 upload flow in
+    // <ProfilePhotoUpload /> writes via `users.setAvatar`, and what every
+    // other view in the app renders. Clerk's imageUrl is the fallback for
+    // brand-new users who haven't set a custom photo yet.
+    avatar: convexUser?.avatar ?? clerk.user?.imageUrl ?? null,
     devUserId: null,
     isDevMode: false,
   }
