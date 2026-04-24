@@ -106,6 +106,146 @@ export const createPoll = mutation({
   },
 })
 
+// Edit a poll. Author OR community admin. The caller may pass
+//   - just `question` (text-only edit; votes are preserved).
+//   - `options` (any rename/reorder/add/remove); in that case every
+//     existing vote row is deleted because vote indices no longer map to
+//     meaningful choices. The UI asks for confirmation before sending an
+//     options-changing payload.
+//   - `closesAt` (explicit null clears the deadline; undefined = no
+//     change; a number sets a new deadline).
+export const updatePoll = mutation({
+  args: {
+    devUserId: v.optional(v.id("users")),
+    pollId: v.id("communityPolls"),
+    question: v.optional(v.string()),
+    options: v.optional(v.array(v.string())),
+    closesAt: v.optional(v.union(v.number(), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const callerId = await resolveCallerId(ctx, {
+      devUserId: args.devUserId,
+    })
+    const poll = await ctx.db.get(args.pollId)
+    if (!poll) throw new Error("Poll not found")
+
+    if (poll.authorId !== callerId) {
+      await requireCommunityRole(
+        ctx,
+        callerId,
+        poll.communityId,
+        "admin",
+      )
+    }
+
+    const patch: {
+      question?: string
+      options?: string[]
+      closesAt?: number | undefined
+      editedAt: number
+    } = { editedAt: Date.now() }
+
+    if (args.question !== undefined) {
+      const question = args.question.trim()
+      if (question.length < 2) throw new Error("Question is too short")
+      patch.question = question
+    }
+
+    // Determine if the options list is actually changing. If the caller
+    // passes `options` but the array happens to be identical, we don't
+    // wipe votes. Callers who want to edit only the question must omit
+    // `options` entirely.
+    let optionsChanged = false
+    if (args.options !== undefined) {
+      const cleaned = args.options
+        .map((o) => o.trim())
+        .filter((o) => o.length > 0)
+      if (cleaned.length < 2) {
+        throw new Error("At least 2 options are required")
+      }
+      if (cleaned.length > 8) {
+        throw new Error("At most 8 options are allowed")
+      }
+      const same =
+        cleaned.length === poll.options.length &&
+        cleaned.every((o, i) => o === poll.options[i])
+      if (!same) {
+        optionsChanged = true
+        patch.options = cleaned
+      }
+    }
+
+    if (args.closesAt !== undefined) {
+      if (args.closesAt === null) {
+        patch.closesAt = undefined
+      } else {
+        if (!Number.isFinite(args.closesAt) || args.closesAt < Date.now()) {
+          throw new Error("closesAt must be a future timestamp")
+        }
+        patch.closesAt = args.closesAt
+      }
+    }
+
+    await ctx.db.patch(args.pollId, patch)
+
+    // Wipe votes when the option list changes — the stored indices no
+    // longer map to the new labels and keeping them would be misleading.
+    // We process in batches of 200 to stay within transaction limits; a
+    // community poll is unlikely to exceed that, but guarding here keeps
+    // the mutation safe for a hot poll with thousands of votes.
+    if (optionsChanged) {
+      while (true) {
+        const batch = await ctx.db
+          .query("communityPollVotes")
+          .withIndex("by_poll", (q) => q.eq("pollId", args.pollId))
+          .take(200)
+        if (batch.length === 0) break
+        for (const row of batch) {
+          await ctx.db.delete(row._id)
+        }
+        if (batch.length < 200) break
+      }
+    }
+  },
+})
+
+// Delete a poll. Author OR community admin. Also wipes every vote row
+// referencing it so we don't leave orphan rows behind.
+export const deletePoll = mutation({
+  args: {
+    devUserId: v.optional(v.id("users")),
+    pollId: v.id("communityPolls"),
+  },
+  handler: async (ctx, args) => {
+    const callerId = await resolveCallerId(ctx, {
+      devUserId: args.devUserId,
+    })
+    const poll = await ctx.db.get(args.pollId)
+    if (!poll) throw new Error("Poll not found")
+    if (poll.authorId !== callerId) {
+      await requireCommunityRole(
+        ctx,
+        callerId,
+        poll.communityId,
+        "admin",
+      )
+    }
+
+    while (true) {
+      const batch = await ctx.db
+        .query("communityPollVotes")
+        .withIndex("by_poll", (q) => q.eq("pollId", args.pollId))
+        .take(200)
+      if (batch.length === 0) break
+      for (const row of batch) {
+        await ctx.db.delete(row._id)
+      }
+      if (batch.length < 200) break
+    }
+    await ctx.db.delete(args.pollId)
+  },
+})
+
 // Cast or change a vote. Member-only. Deduped by the
 // `by_poll_and_user` index — a second call replaces the previous vote
 // rather than adding a new row, so vote counts always equal the number

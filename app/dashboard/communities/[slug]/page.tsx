@@ -14,6 +14,8 @@ import {
   MapPinIcon,
   MegaphoneIcon,
   MessageCircleIcon,
+  MoreHorizontalIcon,
+  PencilIcon,
   PinIcon,
   UserPlusIcon,
   UsersIcon,
@@ -31,6 +33,7 @@ import { SiteHeader } from "@/components/site-header"
 import { PageShell } from "@/components/dashboard-layout"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import {
   Dialog,
@@ -41,6 +44,12 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Textarea } from "@/components/ui/textarea"
 
 function initials(name: string) {
@@ -65,6 +74,20 @@ function formatEventDate(startsAt: number): string {
     minute: "2-digit",
   })
   return `${date} · ${time}`
+}
+
+// Tiny relative-time helper for the "· edited {when}" indicator. Mirrors
+// the one in `components/chat/tool-cards/announcements-card.tsx`.
+function relativeTime(ms: number): string {
+  const diff = Date.now() - ms
+  const m = Math.round(diff / 60000)
+  if (m < 1) return "just now"
+  if (m < 60) return `${m}m ago`
+  const h = Math.round(m / 60)
+  if (h < 24) return `${h}h ago`
+  const d = Math.round(h / 24)
+  if (d < 7) return `${d}d ago`
+  return new Date(ms).toLocaleDateString()
 }
 
 export default function Page() {
@@ -352,38 +375,62 @@ export default function Page() {
                   </div>
                 ) : (
                   <ul className="space-y-2">
-                    {announcements.map((row) => (
-                      <li
-                        key={row.announcement._id}
-                        className="rounded-md border bg-card p-3"
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <h4 className="truncate text-sm font-medium">
-                            {row.announcement.title}
-                          </h4>
-                          {row.announcement.pinned && (
-                            <Badge
-                              variant="secondary"
-                              className="text-[10px] gap-1"
-                            >
-                              <PinIcon className="size-3" />
-                              Pinned
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="prose prose-sm dark:prose-invert mt-1 max-w-none">
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                            {row.announcement.body}
-                          </ReactMarkdown>
-                        </div>
-                        <p className="mt-2 text-[10px] text-muted-foreground">
-                          {row.author?.name ?? "Unknown"} ·{" "}
-                          {new Date(
-                            row.announcement.createdAt,
-                          ).toLocaleString()}
-                        </p>
-                      </li>
-                    ))}
+                    {announcements.map((row) => {
+                      const canEditAnnouncement =
+                        viewerData?.myUserId === row.announcement.authorId ||
+                        isAdmin
+                      return (
+                        <li
+                          key={row.announcement._id}
+                          className="rounded-md border bg-card p-3"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <h4 className="truncate text-sm font-medium">
+                              {row.announcement.title}
+                            </h4>
+                            <div className="flex items-center gap-1">
+                              {row.announcement.pinned && (
+                                <Badge
+                                  variant="secondary"
+                                  className="text-[10px] gap-1"
+                                >
+                                  <PinIcon className="size-3" />
+                                  Pinned
+                                </Badge>
+                              )}
+                              {canEditAnnouncement && (
+                                <EditAnnouncementMenu
+                                  announcement={row.announcement}
+                                />
+                              )}
+                            </div>
+                          </div>
+                          <div className="prose prose-sm dark:prose-invert mt-1 max-w-none">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {row.announcement.body}
+                            </ReactMarkdown>
+                          </div>
+                          <p className="mt-2 text-[10px] text-muted-foreground">
+                            {row.author?.name ?? "Unknown"} ·{" "}
+                            {new Date(
+                              row.announcement.createdAt,
+                            ).toLocaleString()}
+                            {row.announcement.editedAt ? (
+                              <>
+                                {" · "}
+                                <span
+                                  title={new Date(
+                                    row.announcement.editedAt,
+                                  ).toLocaleString()}
+                                >
+                                  edited {relativeTime(row.announcement.editedAt)}
+                                </span>
+                              </>
+                            ) : null}
+                          </p>
+                        </li>
+                      )
+                    })}
                   </ul>
                 )}
               </div>
@@ -397,6 +444,8 @@ export default function Page() {
                   <h3 className="text-sm font-semibold">Polls</h3>
                   <PollsSection
                     polls={polls}
+                    viewerId={viewerData?.myUserId ?? null}
+                    isAdmin={isAdmin}
                     onVote={async (pollId, optionIndex) => {
                       try {
                         await votePoll({ pollId, optionIndex })
@@ -530,12 +579,16 @@ type PollRow = {
 function PollsSection({
   polls,
   onVote,
+  viewerId,
+  isAdmin,
 }: {
   polls: PollRow[] | undefined
   onVote: (
     pollId: Id<"communityPolls">,
     optionIndex: number,
   ) => Promise<void>
+  viewerId: Id<"users"> | null
+  isAdmin: boolean
 }) {
   if (polls === undefined) {
     return <p className="text-xs text-muted-foreground">Loading…</p>
@@ -550,7 +603,15 @@ function PollsSection({
   // Only show the most recent poll as a card; older polls are reachable
   // from the manage / future polls-listing pages.
   const latest = polls[0]
-  return <LatestPollCard latest={latest} onVote={onVote} />
+  const canEditPoll =
+    (viewerId !== null && viewerId === latest.poll.authorId) || isAdmin
+  return (
+    <LatestPollCard
+      latest={latest}
+      onVote={onVote}
+      canEdit={canEditPoll}
+    />
+  )
 }
 
 // Split out so we can use `useState` for the "now" cutoff (needed
@@ -558,12 +619,14 @@ function PollsSection({
 function LatestPollCard({
   latest,
   onVote,
+  canEdit,
 }: {
   latest: PollRow
   onVote: (
     pollId: Id<"communityPolls">,
     optionIndex: number,
   ) => Promise<void>
+  canEdit: boolean
 }) {
   const [now, setNow] = React.useState<number>(() => Date.now())
   React.useEffect(() => {
@@ -574,10 +637,21 @@ function LatestPollCard({
     latest.poll.closesAt !== undefined && latest.poll.closesAt < now
   return (
     <div className="rounded-md border bg-card p-3">
-      <p className="text-sm font-medium">{latest.poll.question}</p>
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-sm font-medium">{latest.poll.question}</p>
+        {canEdit && <EditPollButton poll={latest.poll} />}
+      </div>
       <p className="mt-0.5 text-[10px] text-muted-foreground">
         {latest.totalVotes} vote{latest.totalVotes === 1 ? "" : "s"}
         {closed ? " · closed" : ""}
+        {latest.poll.editedAt ? (
+          <>
+            {" · "}
+            <span title={new Date(latest.poll.editedAt).toLocaleString()}>
+              edited {relativeTime(latest.poll.editedAt)}
+            </span>
+          </>
+        ) : null}
       </p>
       <ul className="mt-2 space-y-1.5">
         {latest.poll.options.map((opt, i) => {
@@ -725,5 +799,283 @@ function ContactAdminButton({
       <MessageCircleIcon className="size-4" />
       Contact admin
     </Button>
+  )
+}
+
+// More-menu + inline edit dialog for an announcement. Visible to the
+// author (or community admin — the parent gates visibility). Prefills
+// with the current title + body. We intentionally reuse the same
+// Textarea the /announcements/new page uses so whichever composer the
+// parallel upload-features agent swaps in applies here too.
+function EditAnnouncementMenu({
+  announcement,
+}: {
+  announcement: Doc<"communityAnnouncements">
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [title, setTitle] = React.useState(announcement.title)
+  const [body, setBody] = React.useState(announcement.body)
+  const [submitting, setSubmitting] = React.useState(false)
+  const updateAnnouncement = useIdentifiedMutation(
+    api.communityAnnouncements.updateAnnouncement,
+  )
+
+  // Reset fields when the dialog opens so an edit started and cancelled
+  // doesn't show stale values on the next open.
+  React.useEffect(() => {
+    if (open) {
+      setTitle(announcement.title)
+      setBody(announcement.body)
+    }
+  }, [open, announcement.title, announcement.body])
+
+  async function handleSave() {
+    const nextTitle = title.trim()
+    const nextBody = body.trim()
+    if (nextTitle.length < 2) {
+      toast.error("Title is too short")
+      return
+    }
+    if (nextBody.length === 0) {
+      toast.error("Body is required")
+      return
+    }
+    setSubmitting(true)
+    try {
+      await updateAnnouncement({
+        announcementId: announcement._id,
+        title: nextTitle,
+        body: nextBody,
+      })
+      toast.success("Announcement updated")
+      setOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="icon" variant="ghost" className="size-7">
+            <MoreHorizontalIcon className="size-4" />
+            <span className="sr-only">Announcement actions</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-32">
+          <DropdownMenuItem onSelect={() => setOpen(true)}>
+            <PencilIcon className="size-3.5 mr-2" />
+            Edit
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Edit announcement</DialogTitle>
+            <DialogDescription>
+              Members won&apos;t get a new notification for edits.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium">Title</label>
+              <Input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium">Body (markdown)</label>
+              <Textarea
+                rows={10}
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={submitting}>
+              {submitting ? "Saving…" : "Save changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+// Pencil button + inline edit dialog for a poll. The mutation wipes all
+// votes if the option list changes (add/remove/rename/reorder); we
+// detect that on submit and show a confirm() before sending. Changing
+// just the question text preserves votes.
+function EditPollButton({ poll }: { poll: Doc<"communityPolls"> }) {
+  const [open, setOpen] = React.useState(false)
+  const [question, setQuestion] = React.useState(poll.question)
+  const [options, setOptions] = React.useState<string[]>(poll.options)
+  const [submitting, setSubmitting] = React.useState(false)
+  const updatePoll = useIdentifiedMutation(api.communityPolls.updatePoll)
+
+  React.useEffect(() => {
+    if (open) {
+      setQuestion(poll.question)
+      setOptions(poll.options)
+    }
+  }, [open, poll.question, poll.options])
+
+  function optionsChanged(): boolean {
+    const cleaned = options.map((o) => o.trim()).filter((o) => o.length > 0)
+    if (cleaned.length !== poll.options.length) return true
+    return cleaned.some((o, i) => o !== poll.options[i])
+  }
+
+  async function handleSave() {
+    const nextQuestion = question.trim()
+    if (nextQuestion.length < 2) {
+      toast.error("Question is too short")
+      return
+    }
+    const cleaned = options.map((o) => o.trim()).filter((o) => o.length > 0)
+    if (cleaned.length < 2) {
+      toast.error("At least 2 options are required")
+      return
+    }
+    if (cleaned.length > 8) {
+      toast.error("At most 8 options are allowed")
+      return
+    }
+
+    const optsChanged = optionsChanged()
+    if (optsChanged) {
+      // Native confirm() keeps the confirmation scope narrow — we don't
+      // want a second nested Dialog stacked on top of this one. The
+      // server ALSO wipes votes so if the user dismisses this prompt
+      // accidentally without the dialog closing, nothing is lost.
+      const ok = window.confirm(
+        "Changing the options will clear every existing vote on this poll. Continue?",
+      )
+      if (!ok) return
+    }
+
+    setSubmitting(true)
+    try {
+      await updatePoll({
+        pollId: poll._id,
+        question: nextQuestion,
+        options: optsChanged ? cleaned : undefined,
+      })
+      toast.success(
+        optsChanged ? "Poll updated; votes cleared" : "Poll updated",
+      )
+      setOpen(false)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  function addOption() {
+    if (options.length >= 8) return
+    setOptions([...options, ""])
+  }
+  function removeOption(i: number) {
+    if (options.length <= 2) return
+    setOptions(options.filter((_, idx) => idx !== i))
+  }
+  function updateOption(i: number, value: string) {
+    setOptions(options.map((o, idx) => (idx === i ? value : o)))
+  }
+
+  return (
+    <>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="size-6"
+        onClick={() => setOpen(true)}
+        title="Edit poll"
+      >
+        <PencilIcon className="size-3" />
+        <span className="sr-only">Edit poll</span>
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit poll</DialogTitle>
+            <DialogDescription>
+              Changing the options will clear all existing votes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs font-medium">Question</label>
+              <Input
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                className="mt-1"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium">Options</label>
+              <div className="mt-1 space-y-2">
+                {options.map((opt, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      placeholder={`Option ${i + 1}`}
+                      value={opt}
+                      onChange={(e) => updateOption(i, e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => removeOption(i)}
+                      disabled={options.length <= 2}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                ))}
+                {options.length < 8 && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={addOption}
+                  >
+                    Add option
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setOpen(false)}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={submitting}>
+              {submitting ? "Saving…" : "Save changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

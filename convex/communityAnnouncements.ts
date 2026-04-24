@@ -117,6 +117,56 @@ export const postAnnouncement = mutation({
   },
 })
 
+// Edit an announcement. Author OR community admin. Sets `editedAt` to
+// Date.now() so the UI can render a "· edited" marker next to the
+// timestamp. Title + body are both optional — a caller can patch one
+// without the other (though the UI always sends both today).
+export const updateAnnouncement = mutation({
+  args: {
+    devUserId: v.optional(v.id("users")),
+    announcementId: v.id("communityAnnouncements"),
+    title: v.optional(v.string()),
+    body: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const callerId = await resolveCallerId(ctx, {
+      devUserId: args.devUserId,
+    })
+    const announcement = await ctx.db.get(args.announcementId)
+    if (!announcement) throw new Error("Announcement not found")
+
+    if (announcement.authorId !== callerId) {
+      // Non-authors must be community admins to edit.
+      await requireCommunityRole(
+        ctx,
+        callerId,
+        announcement.communityId,
+        "admin",
+      )
+    }
+
+    const patch: {
+      title?: string
+      body?: string
+      editedAt: number
+    } = { editedAt: Date.now() }
+
+    if (args.title !== undefined) {
+      const title = args.title.trim()
+      if (title.length < 2) throw new Error("Title is too short")
+      patch.title = title
+    }
+    if (args.body !== undefined) {
+      const body = args.body.trim()
+      if (body.length === 0) throw new Error("Body is required")
+      if (body.length > 20_000) throw new Error("Body is too long")
+      patch.body = body
+    }
+
+    await ctx.db.patch(args.announcementId, patch)
+  },
+})
+
 // Delete an announcement. Admin OR author. Members cannot delete
 // someone else's post.
 export const deleteAnnouncement = mutation({

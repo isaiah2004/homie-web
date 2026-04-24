@@ -152,6 +152,20 @@ export const createEvent = mutation({
   },
 });
 
+// Edit an event. Creator-only. Supports patching every metadata field
+// plus the invitee roster in a single call.
+//
+// Side effects:
+//   - `startsAt` change → notify every non-pending invitee AND reset
+//     everyone's RSVP to "pending" (they should re-confirm for the new
+//     time). Also stamps `editedAt`.
+//   - `endsAt` or venue (locationName/Address/MapsLink) change → notify
+//     current RSVPers ("details updated"). RSVPs are preserved.
+//   - `inviteeIds` → diffs against current invites. New users get a
+//     pending invite + `event_invite` notification; removed users have
+//     their invite row deleted (silently — no "you were uninvited"
+//     notification).
+//   - Always stamps `editedAt` when any patchable field is present.
 export const updateEvent = mutation({
   args: {
     devUserId: v.optional(v.id("users")),
@@ -160,12 +174,12 @@ export const updateEvent = mutation({
       name: v.optional(v.string()),
       description: v.optional(v.string()),
       startsAt: v.optional(v.number()),
-      endsAt: v.optional(v.number()),
-      locationName: v.optional(v.string()),
-      locationAddress: v.optional(v.string()),
-      locationMapsLink: v.optional(v.string()),
-      locationLat: v.optional(v.number()),
-      locationLng: v.optional(v.number()),
+      endsAt: v.optional(v.union(v.number(), v.null())),
+      locationName: v.optional(v.union(v.string(), v.null())),
+      locationAddress: v.optional(v.union(v.string(), v.null())),
+      locationMapsLink: v.optional(v.union(v.string(), v.null())),
+      locationLat: v.optional(v.union(v.number(), v.null())),
+      locationLng: v.optional(v.union(v.number(), v.null())),
       visibility: v.optional(
         v.union(
           v.literal("public"),
@@ -173,8 +187,12 @@ export const updateEvent = mutation({
           v.literal("invitees"),
         ),
       ),
-      coverImageUrl: v.optional(v.string()),
+      coverImageUrl: v.optional(v.union(v.string(), v.null())),
     }),
+    // When present, replaces the invitee list. undefined → no change.
+    // Items already invited stay as-is (status preserved); items dropped
+    // from the list are uninvited.
+    inviteeIds: v.optional(v.array(v.id("users"))),
   },
   handler: async (ctx, args) => {
     const viewerId = await resolveViewerId(ctx, {
@@ -192,7 +210,15 @@ export const updateEvent = mutation({
     }
 
     const nextStart = args.patch.startsAt ?? event.startsAt;
-    const nextEnd = args.patch.endsAt ?? event.endsAt;
+    // `null` in the patch means "clear the value". `undefined` means "no
+    // change". Normalize to the shape ctx.db.patch expects.
+    const rawEnd = args.patch.endsAt;
+    const nextEnd =
+      rawEnd === undefined
+        ? event.endsAt
+        : rawEnd === null
+          ? undefined
+          : rawEnd;
     if (
       nextEnd !== undefined &&
       Number.isFinite(nextEnd) &&
@@ -201,22 +227,104 @@ export const updateEvent = mutation({
       throw new Error("endsAt cannot be before startsAt");
     }
 
-    const patch = { ...args.patch };
+    // Build the ctx.db.patch payload. Convert any nulls to `undefined`
+    // because Convex's optional-field semantics use `undefined` to clear.
+    type EventPatch = {
+      name?: string;
+      description?: string;
+      startsAt?: number;
+      endsAt?: number;
+      locationName?: string;
+      locationAddress?: string;
+      locationMapsLink?: string;
+      locationLat?: number;
+      locationLng?: number;
+      visibility?: "public" | "friends" | "invitees";
+      coverImageUrl?: string;
+      editedAt?: number;
+    };
+    const patch: EventPatch = {};
     if (newName !== undefined) patch.name = newName;
-    await ctx.db.patch(args.eventId, patch);
+    if (args.patch.description !== undefined) {
+      patch.description = args.patch.description;
+    }
+    if (args.patch.startsAt !== undefined) patch.startsAt = args.patch.startsAt;
+    if (rawEnd !== undefined) patch.endsAt = rawEnd === null ? undefined : rawEnd;
+    if (args.patch.locationName !== undefined) {
+      patch.locationName =
+        args.patch.locationName === null ? undefined : args.patch.locationName;
+    }
+    if (args.patch.locationAddress !== undefined) {
+      patch.locationAddress =
+        args.patch.locationAddress === null
+          ? undefined
+          : args.patch.locationAddress;
+    }
+    if (args.patch.locationMapsLink !== undefined) {
+      patch.locationMapsLink =
+        args.patch.locationMapsLink === null
+          ? undefined
+          : args.patch.locationMapsLink;
+    }
+    if (args.patch.locationLat !== undefined) {
+      patch.locationLat =
+        args.patch.locationLat === null ? undefined : args.patch.locationLat;
+    }
+    if (args.patch.locationLng !== undefined) {
+      patch.locationLng =
+        args.patch.locationLng === null ? undefined : args.patch.locationLng;
+    }
+    if (args.patch.visibility !== undefined) {
+      patch.visibility = args.patch.visibility;
+    }
+    if (args.patch.coverImageUrl !== undefined) {
+      patch.coverImageUrl =
+        args.patch.coverImageUrl === null
+          ? undefined
+          : args.patch.coverImageUrl;
+    }
 
-    // Notify accepted invitees if the start time changed. Declined/maybe
-    // invitees also care about the new time, so notify them too — only
-    // `pending` folks who haven't engaged yet are omitted.
-    if (
+    const hasPatchedFields = Object.keys(patch).length > 0;
+    if (hasPatchedFields) {
+      patch.editedAt = Date.now();
+      await ctx.db.patch(args.eventId, patch);
+    }
+
+    // Detect which kinds of notify-worthy changes happened.
+    const startChanged =
       args.patch.startsAt !== undefined &&
-      args.patch.startsAt !== event.startsAt
-    ) {
-      const accepted = await ctx.db
+      args.patch.startsAt !== event.startsAt;
+    const endChanged =
+      rawEnd !== undefined &&
+      (rawEnd === null ? event.endsAt !== undefined : rawEnd !== event.endsAt);
+    const venueChanged =
+      (args.patch.locationName !== undefined &&
+        (args.patch.locationName ?? undefined) !==
+          (event.locationName ?? undefined)) ||
+      (args.patch.locationAddress !== undefined &&
+        (args.patch.locationAddress ?? undefined) !==
+          (event.locationAddress ?? undefined)) ||
+      (args.patch.locationMapsLink !== undefined &&
+        (args.patch.locationMapsLink ?? undefined) !==
+          (event.locationMapsLink ?? undefined));
+
+    const displayName = newName ?? event.name;
+
+    // Notify non-pending invitees when startsAt / endsAt / venue changes.
+    // We fire a single notification per invitee regardless of how many
+    // things changed — chattier notifications are worse than one focused
+    // update the user can open to see all the changes at once.
+    if (startChanged || endChanged || venueChanged) {
+      const invites = await ctx.db
         .query("eventInvites")
         .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
         .collect();
-      for (const invite of accepted) {
+      const body = startChanged
+        ? "The start time has been updated — please reconfirm your RSVP."
+        : venueChanged
+          ? "The venue has been updated."
+          : "The end time has been updated.";
+      for (const invite of invites) {
         if (invite.status === "pending") continue;
         await ctx.scheduler.runAfter(
           0,
@@ -224,10 +332,67 @@ export const updateEvent = mutation({
           {
             userId: invite.inviteeId,
             type: "event_updated",
-            title: `Time changed: ${newName ?? event.name}`,
-            body: "The start time has been updated.",
+            title: `Updated: ${displayName}`,
+            body,
             link: `/dashboard/events/${args.eventId}`,
             meta: { eventId: args.eventId },
+          },
+        );
+      }
+
+      // RSVP reset on startsAt change — non-pending invitees are flipped
+      // back to pending so they re-confirm for the new time.
+      if (startChanged) {
+        for (const invite of invites) {
+          if (invite.status === "pending") continue;
+          await ctx.db.patch(invite._id, {
+            status: "pending",
+            respondedAt: undefined,
+          });
+        }
+      }
+    }
+
+    // Diff + apply the invitee list, if the caller provided one.
+    if (args.inviteeIds !== undefined) {
+      const desired = new Set<string>(args.inviteeIds.map((id) => id as string));
+      desired.delete(viewerId as string); // can't invite yourself
+      const current = await ctx.db
+        .query("eventInvites")
+        .withIndex("by_event", (q) => q.eq("eventId", args.eventId))
+        .collect();
+      const currentIds = new Set<string>(
+        current.map((r) => r.inviteeId as string),
+      );
+      // Remove invites the caller dropped from the list.
+      for (const row of current) {
+        if (!desired.has(row.inviteeId as string)) {
+          await ctx.db.delete(row._id);
+        }
+      }
+      // Add invites for new users + notify.
+      const creator = await ctx.db.get(viewerId);
+      const creatorName = creator?.name ?? "Someone";
+      for (const idStr of desired) {
+        if (currentIds.has(idStr)) continue;
+        const userId = idStr as Id<"users">;
+        const inviteId = await ctx.db.insert("eventInvites", {
+          eventId: args.eventId,
+          inviterId: viewerId,
+          inviteeId: userId,
+          status: "pending",
+          createdAt: Date.now(),
+        });
+        await ctx.scheduler.runAfter(
+          0,
+          internal.notifications.createNotification,
+          {
+            userId,
+            type: "event_invite",
+            title: `${creatorName} invited you to ${displayName}`,
+            body: event.description ?? undefined,
+            link: `/dashboard/events/${args.eventId}`,
+            meta: { eventId: args.eventId, inviteId },
           },
         );
       }
