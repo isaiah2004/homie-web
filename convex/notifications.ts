@@ -152,6 +152,7 @@ export const createNotification = internalMutation({
       v.literal("community_announcement"),
       v.literal("community_role_changed"),
       v.literal("community_removed"),
+      v.literal("community_invite"),
       v.literal("business_member_invite"),
       v.literal("business_role_changed"),
       v.literal("ad_approved"),

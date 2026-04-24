@@ -179,6 +179,83 @@ export const getUserForViewer = query({
   },
 });
 
+// Broader user search across `name`, `username`, and `email`. Used by
+// surfaces that need a people-picker (e.g. community admin adding members).
+// Runs three prefix-style scans in parallel and merges results \u2014 the
+// `by_username` and `email` indexes get prefix range scans; `name` is
+// scanned with a case-insensitive `includes` over a capped slice because
+// there is no name index.
+//
+// Callers can pass `excludeUserIds` to filter out users the UI already
+// knows should be omitted (e.g. existing members / invitees).
+export const searchDiscoverable = query({
+  args: {
+    query: v.string(),
+    excludeUserIds: v.optional(v.array(v.id("users"))),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const q = args.query.trim().toLowerCase();
+    if (q.length === 0) return [];
+    const cap = Math.min(Math.max(args.limit ?? 10, 1), 25);
+    const exclude = new Set<Id<"users">>(args.excludeUserIds ?? []);
+
+    // Prefix scan over username (stripping a leading @ if present).
+    const usernameNeedle = q.replace(/^@/, "");
+    const byUsername = usernameNeedle
+      ? await ctx.db
+          .query("users")
+          .withIndex("by_username", (b) =>
+            b
+              .gte("username", usernameNeedle)
+              .lt("username", usernameNeedle + "\uffff"),
+          )
+          .take(cap * 2)
+      : [];
+
+    // Prefix scan over email (lowercase \u2014 our emails are stored lowercase
+    // because Clerk hands us lowercase addresses).
+    const byEmail = q.includes("@") || /[a-z0-9.+-]/.test(q)
+      ? await ctx.db
+          .query("users")
+          .withIndex("email", (b) =>
+            b.gte("email", q).lt("email", q + "\uffff"),
+          )
+          .take(cap * 2)
+      : [];
+
+    // Name: no index, so cap at 500 rows to stay within query limits. This
+    // is only used as a last-resort fallback when the first two don't
+    // produce enough hits \u2014 for typical username/email searches the above
+    // indexes are sufficient.
+    let byName: Doc<"users">[] = [];
+    if (byUsername.length + byEmail.length < cap) {
+      const scanned = await ctx.db.query("users").take(500);
+      byName = scanned.filter((u) =>
+        u.name.toLowerCase().includes(q),
+      );
+    }
+
+    const seen = new Set<string>();
+    const merged: Doc<"users">[] = [];
+    for (const row of [...byUsername, ...byEmail, ...byName]) {
+      if (seen.has(row._id)) continue;
+      if (exclude.has(row._id)) continue;
+      seen.add(row._id);
+      merged.push(row);
+      if (merged.length >= cap) break;
+    }
+
+    return merged.map((u) => ({
+      _id: u._id,
+      name: u.name,
+      username: u.username ?? null,
+      email: u.email,
+      avatar: u.avatar ?? null,
+    }));
+  },
+});
+
 // Prefix search over `username`. Backed by the by_username index using a
 // range scan: `gte(prefix) && lt(prefix + "\uffff")` matches every username
 // that starts with `prefix`.
