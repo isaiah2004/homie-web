@@ -137,6 +137,7 @@ export const users = defineTable({
     address: v.optional(v.string()),
     tags: v.array(v.string()),
     visibility: visibilityEnum,
+    imageUrl: v.optional(v.string()),
   }))),
   
   projects: v.optional(v.array(v.object({
@@ -644,6 +645,14 @@ export const communities = defineTable({
   locationLng: v.number(),
   locationLabel: v.optional(v.string()),
   locationRadiusKm: v.number(),
+  // Full Places metadata captured when the creator picks a location from the
+  // Places search dialog. All optional for backwards-compat with pre-existing
+  // communities that were created with the manual lat/lng flow.
+  locationPlaceId: v.optional(v.string()),
+  locationMapsUri: v.optional(v.string()),
+  locationAddress: v.optional(v.string()),
+  locationCity: v.optional(v.string()),
+  locationCountry: v.optional(v.string()),
   isPublic: v.boolean(),
   isPaid: v.boolean(),
   createdBy: v.id("users"),
@@ -653,7 +662,16 @@ export const communities = defineTable({
 })
   .index("by_slug", ["slug"])
   .index("by_category", ["category"])
-  .index("by_geoBucket", ["geoBucket"]);
+  .index("by_geoBucket", ["geoBucket"])
+  // Full-text search for the Discover "search by name or city" flow.
+  .searchIndex("search_name", {
+    searchField: "name",
+    filterFields: ["isPublic", "category"],
+  })
+  .searchIndex("search_city", {
+    searchField: "locationCity",
+    filterFields: ["isPublic", "category"],
+  });
 
 // Community membership roster. Role hierarchy (lowest → highest):
 //   member < announcer < moderator < admin

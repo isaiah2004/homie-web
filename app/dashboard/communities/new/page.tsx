@@ -11,10 +11,7 @@ import { ArrowLeftIcon, Loader2Icon } from "lucide-react"
 
 import { api } from "@/convex/_generated/api"
 import { useActiveUser } from "@/hooks/use-active-user"
-import {
-  useIdentifiedAction,
-  useIdentifiedMutation,
-} from "@/hooks/use-identified"
+import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { SiteHeader } from "@/components/site-header"
@@ -24,7 +21,6 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import {
   Field,
-  FieldDescription,
   FieldError,
   FieldGroup,
   FieldLabel,
@@ -37,6 +33,10 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { R2ImageUpload } from "@/components/app-ui/r2-image-upload"
+import {
+  LocationPickerField,
+  type ResolvedLocation,
+} from "@/components/app-ui/LocationPickerField"
 
 const formSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters"),
@@ -55,20 +55,12 @@ const formSchema = z.object({
     "other",
   ]),
   isPublic: z.enum(["public", "private"]),
-  locationLat: z.coerce
-    .number()
-    .min(-90, "Latitude must be between -90 and 90")
-    .max(90, "Latitude must be between -90 and 90"),
-  locationLng: z.coerce
-    .number()
-    .min(-180, "Longitude must be between -180 and 180")
-    .max(180, "Longitude must be between -180 and 180"),
-  locationLabel: z.string().trim().optional().or(z.literal("")),
+  // Radius is still user-editable; lat/lng/label are derived from the
+  // LocationPickerField pick and surfaced through a separate state below.
   locationRadiusKm: z.coerce
     .number()
     .gt(0, "Radius must be positive")
     .max(500, "Radius must be <= 500 km"),
-  mapsLink: z.string().trim().optional().or(z.literal("")),
 })
 
 type FormValues = z.infer<typeof formSchema>
@@ -80,16 +72,11 @@ export default function Page() {
   const createCommunity = useIdentifiedMutation(
     api.communities.createCommunity,
   )
-  const parseMapsLink = useIdentifiedAction(
-    api.parseGoogleMapsLink.parseGoogleMapsLink,
-  )
 
   const {
     register,
     control,
     handleSubmit,
-    watch,
-    setValue,
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -99,17 +86,13 @@ export default function Page() {
       description: "",
       category: "social",
       isPublic: "public",
-      locationLat: undefined,
-      locationLng: undefined,
-      locationLabel: "",
       locationRadiusKm: 25,
-      mapsLink: "",
     },
   })
 
   const [coverImageUrl, setCoverImageUrl] = React.useState<string | null>(null)
   const [avatarUrl, setAvatarUrl] = React.useState<string | null>(null)
-  const [parsing, setParsing] = React.useState(false)
+  const [location, setLocation] = React.useState<ResolvedLocation | null>(null)
 
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
@@ -121,38 +104,25 @@ export default function Page() {
     )
   }
 
-  async function handleParseMapsLink() {
-    const url = watch("mapsLink")?.trim()
-    if (!url) {
-      toast.error("Paste a Google Maps link first")
+  async function onSubmit(values: FormValues) {
+    if (!location) {
+      toast.error("Pick a location for this community.")
       return
     }
-    setParsing(true)
-    try {
-      const parsed = await parseMapsLink({ url })
-      if (parsed.name) {
-        setValue("locationLabel", parsed.name, { shouldValidate: true })
-      }
-      toast.success("Label parsed — fill in lat/lng manually for now")
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Couldn't parse link",
-      )
-    } finally {
-      setParsing(false)
-    }
-  }
-
-  async function onSubmit(values: FormValues) {
     try {
       const res = await createCommunity({
         name: values.name,
         description: values.description,
         category: values.category,
-        locationLat: values.locationLat,
-        locationLng: values.locationLng,
-        locationLabel: values.locationLabel || undefined,
+        locationLat: location.lat,
+        locationLng: location.lng,
+        locationLabel: location.name,
         locationRadiusKm: values.locationRadiusKm,
+        locationPlaceId: location.placeId,
+        locationMapsUri: location.mapsUri,
+        locationAddress: location.address,
+        locationCity: location.city,
+        locationCountry: location.country,
         isPublic: values.isPublic === "public",
         coverImageUrl: coverImageUrl ?? undefined,
         avatarUrl: avatarUrl ?? undefined,
@@ -231,84 +201,26 @@ export default function Page() {
                 </Field>
 
                 <Field>
-                  <FieldLabel htmlFor="mapsLink">
-                    Google Maps link{" "}
-                    <span className="text-muted-foreground">(optional)</span>
-                  </FieldLabel>
-                  <div className="flex gap-2">
-                    <Input
-                      id="mapsLink"
-                      placeholder="https://maps.app.goo.gl/..."
-                      {...register("mapsLink")}
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={parsing}
-                      onClick={handleParseMapsLink}
-                    >
-                      {parsing ? (
-                        <Loader2Icon className="size-4 animate-spin" />
-                      ) : (
-                        "Parse label"
-                      )}
-                    </Button>
-                  </div>
-                  <FieldDescription>
-                    We&apos;ll fill in the location label. Lat/lng still
-                    need to be entered by hand for v1.
-                  </FieldDescription>
+                  <FieldLabel>Location</FieldLabel>
+                  <LocationPickerField
+                    value={location}
+                    onChange={setLocation}
+                    triggerLabel="Pick a location"
+                  />
                 </Field>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field>
-                    <FieldLabel htmlFor="locationLat">Latitude</FieldLabel>
-                    <Input
-                      id="locationLat"
-                      inputMode="decimal"
-                      placeholder="12.9716"
-                      {...register("locationLat")}
-                    />
-                    <FieldError errors={[errors.locationLat]} />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="locationLng">Longitude</FieldLabel>
-                    <Input
-                      id="locationLng"
-                      inputMode="decimal"
-                      placeholder="77.5946"
-                      {...register("locationLng")}
-                    />
-                    <FieldError errors={[errors.locationLng]} />
-                  </Field>
-                </div>
-
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field>
-                    <FieldLabel htmlFor="locationLabel">
-                      Label{" "}
-                      <span className="text-muted-foreground">
-                        (optional)
-                      </span>
-                    </FieldLabel>
-                    <Input
-                      id="locationLabel"
-                      placeholder="Indiranagar, Bangalore"
-                      {...register("locationLabel")}
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="locationRadiusKm">
-                      Radius (km)
-                    </FieldLabel>
-                    <Input
-                      id="locationRadiusKm"
-                      inputMode="decimal"
-                      {...register("locationRadiusKm")}
-                    />
-                    <FieldError errors={[errors.locationRadiusKm]} />
-                  </Field>
-                </div>
+                <Field>
+                  <FieldLabel htmlFor="locationRadiusKm">
+                    Radius (km)
+                  </FieldLabel>
+                  <Input
+                    id="locationRadiusKm"
+                    inputMode="decimal"
+                    className="max-w-[12rem]"
+                    {...register("locationRadiusKm")}
+                  />
+                  <FieldError errors={[errors.locationRadiusKm]} />
+                </Field>
 
                 <Field>
                   <FieldLabel htmlFor="isPublic">Visibility</FieldLabel>

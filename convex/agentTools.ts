@@ -113,16 +113,51 @@ export function buildAgentTools(ctx: ActionCtx, askerId: Id<"users">) {
         const filtered = placeType
           ? hits.filter((h) => h.placeType === placeType)
           : hits;
-        return filtered.map((h) => ({
-          name: h.name,
-          placeType: h.placeType,
-          tags: h.tags,
-          mapsLink: h.mapsLink,
-          address: h.address,
-          recommendedBy: h.ownerName,
-          ownerLocation: h.ownerLocation,
-          score: h.score,
-        }));
+
+        // Enrich any results missing an imageUrl by doing a Google Places
+        // text search for the place name + address. Matches legacy places
+        // (added via manual form or pasted Maps link, before the picker
+        // flow captured imageUrl) to their photo + rating + canonical type
+        // label. Runs in parallel per result so total latency is ~one
+        // Places call, not N sequential.
+        const enriched = await Promise.all(
+          filtered.map(async (h) => {
+            const base = {
+              name: h.name,
+              placeType: h.placeType,
+              tags: h.tags,
+              mapsLink: h.mapsLink,
+              address: h.address,
+              imageUrl: h.imageUrl,
+              typeLabel: undefined as string | undefined,
+              rating: undefined as number | undefined,
+              recommendedBy: h.ownerName,
+              ownerLocation: h.ownerLocation,
+              score: h.score,
+            };
+            if (base.imageUrl || !base.name) return base;
+            try {
+              const res = await ctx.runAction(
+                api.placesSearch.searchPlacesForProfile,
+                {
+                  query: `${base.name} ${base.address ?? ""}`.trim(),
+                  limit: 1,
+                },
+              );
+              const top = res.places?.[0];
+              if (top) {
+                base.imageUrl = top.imageUrl ?? base.imageUrl;
+                base.typeLabel = top.typeLabel;
+                base.rating = top.rating;
+              }
+            } catch {
+              // Enrichment is best-effort — never fail the tool if Places
+              // search hiccups.
+            }
+            return base;
+          }),
+        );
+        return enriched;
       },
     }),
 
@@ -156,6 +191,9 @@ export function buildAgentTools(ctx: ActionCtx, askerId: Id<"users">) {
           title: h.title,
           mediaType: h.mediaType,
           recommendedBy: h.ownerName,
+          imageUrl: h.imageUrl,
+          subtitle: h.subtitle,
+          externalSource: h.externalSource,
           score: h.score,
         }));
       },

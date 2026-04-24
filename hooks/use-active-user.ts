@@ -11,6 +11,7 @@ export type ActiveUser = {
   email: string | null
   username: string | null
   fullName: string | null
+  avatar: string | null
   // In dev mode this is the Convex users id of the selected seeded user;
   // null in production (callers should do a getOrCreateUser round-trip there).
   devUserId: Id<"users"> | null
@@ -74,6 +75,7 @@ function useActiveUserDev(): ActiveUser {
     email: devUser?.email ?? null,
     username: devUser?.username ?? null,
     fullName: devUser?.name ?? null,
+    avatar: devUser?.avatar ?? null,
     devUserId: devUserId ?? null,
     isDevMode: true,
   }
@@ -112,6 +114,9 @@ function useActiveUserClerk(): ActiveUser {
     email,
     username: convexUser?.username ?? clerk.user?.username ?? null,
     fullName: convexUser?.name ?? clerk.user?.fullName ?? null,
+    // Prefer Clerk's live imageUrl — it updates immediately on upload,
+    // before the Convex mirror catches up.
+    avatar: clerk.user?.imageUrl ?? convexUser?.avatar ?? null,
     devUserId: null,
     isDevMode: false,
   }

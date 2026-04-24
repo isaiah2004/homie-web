@@ -7,6 +7,12 @@
 // No `"use node";` — this module only uses `fetch`, which is available in
 // the default Convex runtime.
 
+export type GoogleAddressComponent = {
+  longText: string;
+  shortText: string;
+  types: string[];
+};
+
 export type GooglePlaceResult = {
   id: string;
   name: string;
@@ -18,6 +24,7 @@ export type GooglePlaceResult = {
   mapsLink: string | null;
   imageUrl: string | null;
   location: { latitude: number; longitude: number } | null;
+  addressComponents: GoogleAddressComponent[];
 };
 
 export type GooglePlacesSearchResponse =
@@ -35,13 +42,20 @@ type RawPlace = {
   photos?: Array<{ name?: string }>;
   primaryTypeDisplayName?: { text?: string };
   location?: { latitude?: number; longitude?: number };
+  addressComponents?: Array<{
+    longText?: string;
+    shortText?: string;
+    types?: string[];
+  }>;
 };
 
 type PlacesResponseBody = {
   places?: RawPlace[];
 };
 
-// Default field mask — includes everything both surfaces care about.
+// Default field mask — includes everything any surface cares about. Kept as
+// a single mask (rather than per-caller) so Convex logs stay consistent and
+// the raw Google response shape doesn't change between consumers.
 const DEFAULT_FIELD_MASK = [
   "places.id",
   "places.displayName",
@@ -53,6 +67,7 @@ const DEFAULT_FIELD_MASK = [
   "places.primaryTypeDisplayName",
   "places.photos",
   "places.location",
+  "places.addressComponents",
 ].join(",");
 
 export async function googlePlacesTextSearch(
@@ -100,6 +115,13 @@ export async function googlePlacesTextSearch(
       typeof p.location.longitude === "number"
         ? { latitude: p.location.latitude, longitude: p.location.longitude }
         : null;
+    const addressComponents: GoogleAddressComponent[] = (
+      p.addressComponents ?? []
+    ).map((c) => ({
+      longText: c.longText ?? "",
+      shortText: c.shortText ?? "",
+      types: c.types ?? [],
+    }));
     return {
       id: p.id ?? name,
       name,
@@ -111,6 +133,7 @@ export async function googlePlacesTextSearch(
       mapsLink: p.googleMapsUri ?? null,
       imageUrl,
       location,
+      addressComponents,
     };
   });
 
@@ -174,4 +197,40 @@ export function buildMapsLinkFromPlaceId(
     : placeId;
   const query = encodeURIComponent(displayName || stripped);
   return `https://www.google.com/maps/search/?api=1&query=${query}&query_place_id=${stripped}`;
+}
+
+// Pull a structured city-ish label out of Google's `addressComponents`.
+// Preference order:
+//   locality (e.g. "Bengaluru") →
+//   sublocality_level_1 (e.g. "Indiranagar") →
+//   administrative_area_level_2 (district, e.g. "Bangalore Urban") →
+//   administrative_area_level_1 (state, e.g. "Karnataka") →
+//   null
+// We use `longText` so user-visible strings stay readable.
+export function extractCityFromAddressComponents(
+  components: GoogleAddressComponent[] | null | undefined,
+): string | null {
+  if (!components || components.length === 0) return null;
+  const pick = (wantedType: string): string | null => {
+    const hit = components.find((c) => c.types.includes(wantedType));
+    return hit?.longText?.trim() || null;
+  };
+  return (
+    pick("locality") ??
+    pick("sublocality_level_1") ??
+    pick("sublocality") ??
+    pick("postal_town") ??
+    pick("administrative_area_level_2") ??
+    pick("administrative_area_level_1") ??
+    null
+  );
+}
+
+// Country name from `addressComponents`, or null.
+export function extractCountryFromAddressComponents(
+  components: GoogleAddressComponent[] | null | undefined,
+): string | null {
+  if (!components || components.length === 0) return null;
+  const hit = components.find((c) => c.types.includes("country"));
+  return hit?.longText?.trim() || null;
 }

@@ -26,6 +26,16 @@ import {
   type FriendsInCommunityOutput,
 } from "./friends-in-community-card"
 import {
+  FriendInterestsCard,
+  type FriendInterestsRow,
+  FriendMediaCard,
+  type FriendMediaRow,
+  FriendPlacesCard,
+  type FriendPlacesRow,
+  FriendProjectsCard,
+  type FriendProjectsRow,
+} from "./friend-graph-cards"
+import {
   SearchAnimeCard,
   SearchBooksCard,
   SearchGamesCard,
@@ -143,6 +153,42 @@ export function ToolPartRenderer({
   // Dispatch on tool name. Adding a new tool? Extend this switch and pair it
   // with the matching card under `components/chat/tool-cards/`.
   switch (toolName) {
+    case "findFriendMedia": {
+      const data = parseToolOutput<FriendMediaRow[]>(part.output)
+      if (!data) return <FallbackToolCard part={part} />
+      return (
+        <div className={className}>
+          <FriendMediaCard data={data} />
+        </div>
+      )
+    }
+    case "findFriendPlaces": {
+      const data = parseToolOutput<FriendPlacesRow[]>(part.output)
+      if (!data) return <FallbackToolCard part={part} />
+      return (
+        <div className={className}>
+          <FriendPlacesCard data={data} />
+        </div>
+      )
+    }
+    case "findFriendProjects": {
+      const data = parseToolOutput<FriendProjectsRow[]>(part.output)
+      if (!data) return <FallbackToolCard part={part} />
+      return (
+        <div className={className}>
+          <FriendProjectsCard data={data} />
+        </div>
+      )
+    }
+    case "findFriendInterests": {
+      const data = parseToolOutput<FriendInterestsRow[]>(part.output)
+      if (!data) return <FallbackToolCard part={part} />
+      return (
+        <div className={className}>
+          <FriendInterestsCard data={data} />
+        </div>
+      )
+    }
     case "findFriendsWithSharedMedia": {
       const data = parseToolOutput<FriendOverlapCardOutput>(part.output)
       if (!data) return <FallbackToolCard part={part} />

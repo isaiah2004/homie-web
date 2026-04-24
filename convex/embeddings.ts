@@ -32,6 +32,12 @@ type ProfileItemPayload = {
   // media
   title?: string;
   mediaType?: string;
+  // Extra media fields denormalized so cards can render thumbnails + source
+  // badges without a second lookup. Only populated for media items.
+  imageUrl?: string;
+  subtitle?: string;
+  externalSource?: string;
+  externalId?: string;
   // project
   description?: string;
   // interest
@@ -71,6 +77,7 @@ function buildItemsForUser(user: Doc<"users">): Array<{
         mapsLink: place.mapsLink,
         address: place.address,
         tags: place.tags,
+        imageUrl: place.imageUrl,
       },
     });
   }
@@ -84,6 +91,10 @@ function buildItemsForUser(user: Doc<"users">): Array<{
         visibility: media.visibility,
         title: media.title,
         mediaType: media.type,
+        imageUrl: media.imageUrl,
+        subtitle: media.subtitle,
+        externalSource: media.externalSource,
+        externalId: media.externalId,
       },
     });
   }
@@ -174,6 +185,10 @@ export type SearchHit = {
   tags?: string[];
   title?: string;
   mediaType?: string;
+  imageUrl?: string;
+  subtitle?: string;
+  externalSource?: string;
+  externalId?: string;
   description?: string;
   value?: string;
 };
@@ -258,6 +273,10 @@ export const searchProfileItems = internalAction({
         tags: p.tags,
         title: p.title,
         mediaType: p.mediaType,
+        imageUrl: p.imageUrl,
+        subtitle: p.subtitle,
+        externalSource: p.externalSource,
+        externalId: p.externalId,
         description: p.description,
         value: p.value,
       });

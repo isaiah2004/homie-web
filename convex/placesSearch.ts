@@ -7,6 +7,8 @@ import { v } from "convex/values";
 import { action } from "./_generated/server";
 import {
   buildMapsLinkFromPlaceId,
+  extractCityFromAddressComponents,
+  extractCountryFromAddressComponents,
   googlePlacesTextSearch,
   mapGoogleTypesToProfileType,
   type ProfilePlaceType,
@@ -105,6 +107,92 @@ export const searchPlacesForProfile = action({
           ratingCount: p.ratingCount ?? undefined,
           mapsLink,
           imageUrl: p.imageUrl ?? undefined,
+          location: p.location ?? undefined,
+        };
+      }),
+    };
+  },
+});
+
+// Location-oriented search used by the community create/edit flows. Same
+// Google Places Text Search endpoint, but the returned shape drops the
+// profile-specific `suggestedType` and adds structured `city` + `country`
+// parsed out of `addressComponents`. Works for both places (e.g. "Prince
+// Street Pizza") and administrative regions (e.g. "Bangalore", "Karnataka").
+export const searchLocation = action({
+  args: {
+    query: v.string(),
+    limit: v.optional(v.number()),
+    devUserId: v.optional(v.id("users")),
+  },
+  returns: v.object({
+    query: v.string(),
+    places: v.array(
+      v.object({
+        id: v.string(),
+        name: v.string(),
+        address: v.optional(v.string()),
+        typeLabel: v.optional(v.string()),
+        types: v.array(v.string()),
+        mapsLink: v.string(),
+        city: v.optional(v.string()),
+        country: v.optional(v.string()),
+        location: v.optional(
+          v.object({
+            latitude: v.number(),
+            longitude: v.number(),
+          }),
+        ),
+      }),
+    ),
+    note: v.optional(v.string()),
+    error: v.optional(v.string()),
+  }),
+  handler: async (ctx, { query, limit, devUserId }) => {
+    await resolveIdentity(ctx, { devUserId });
+
+    const trimmed = query.trim();
+    if (!trimmed) {
+      return { query: trimmed, places: [] };
+    }
+
+    const result = await googlePlacesTextSearch(trimmed, {
+      maxResultCount: Math.min(Math.max(limit ?? 8, 1), 10),
+    });
+
+    if (!result.ok) {
+      if (result.reason === "missing_key") {
+        return {
+          query: trimmed,
+          places: [],
+          note:
+            result.note ??
+            "Google Places key not configured on this deployment.",
+        };
+      }
+      return {
+        query: trimmed,
+        places: [],
+        error: `Places search failed (HTTP ${result.status ?? "unknown"}).`,
+      };
+    }
+
+    return {
+      query: trimmed,
+      places: result.places.map((p) => {
+        const mapsLink =
+          p.mapsLink ?? buildMapsLinkFromPlaceId(p.id, p.name);
+        const city = extractCityFromAddressComponents(p.addressComponents);
+        const country = extractCountryFromAddressComponents(p.addressComponents);
+        return {
+          id: p.id,
+          name: p.name,
+          address: p.address ?? undefined,
+          typeLabel: p.typeLabel ?? undefined,
+          types: p.types,
+          mapsLink,
+          city: city ?? undefined,
+          country: country ?? undefined,
           location: p.location ?? undefined,
         };
       }),

@@ -348,7 +348,6 @@ export default function Page() {
     isOnline: true,
     isVoiceActive,
     type: "direct" as const,
-    avatar: "/homie-avatar.png"
   }
 
   return (

@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useQuery } from "convex/react"
 import {
+  ChevronDownIcon,
   CompassIcon,
   PlusIcon,
   SearchIcon,
@@ -63,13 +64,34 @@ export default function Page() {
     skip ? "skip" : identityArg,
   )
 
-  // Discover controls. We keep them client-side state so the user can
-  // iterate on radius + category without re-fetching on every keystroke.
+  // Simple text search — default Discover flow. Debounced so we don't
+  // hit Convex on every keystroke.
+  const [searchText, setSearchText] = React.useState<string>("")
+  const [debouncedSearch, setDebouncedSearch] = React.useState<string>("")
+  React.useEffect(() => {
+    const handle = setTimeout(() => setDebouncedSearch(searchText.trim()), 250)
+    return () => clearTimeout(handle)
+  }, [searchText])
+
+  // Advanced (geo) controls. Hidden by default; kept intact so anyone who
+  // wants precise near-me search can still get it.
   const [lat, setLat] = React.useState<string>("")
   const [lng, setLng] = React.useState<string>("")
   const [radius, setRadius] = React.useState<string>("25")
   const [category, setCategory] = React.useState<Category>("all")
   const [discoverReady, setDiscoverReady] = React.useState(false)
+  const [advancedOpen, setAdvancedOpen] = React.useState(false)
+
+  const textSearchResults = useQuery(
+    api.communities.searchCommunitiesByText,
+    skip || !debouncedSearch
+      ? "skip"
+      : {
+          query: debouncedSearch,
+          ...(category !== "all" ? { category } : {}),
+          ...identityArg,
+        },
+  )
 
   const discoverArgs = React.useMemo(() => {
     const parsedLat = parseFloat(lat)
@@ -178,52 +200,19 @@ export default function Page() {
             </TabsContent>
 
             <TabsContent value="discover" className="mt-4 space-y-4">
+              {/* Simple search — default. Matches on community name or city. */}
               <div className="rounded-lg border bg-card p-4">
-                <p className="text-sm font-medium">
-                  Enter coordinates to discover communities near you.
-                </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  Paste a lat/lng pair or pick a city preset. We&apos;ll
-                  scan a rough 3x3 grid and filter to anything within your
-                  radius.
-                </p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-4">
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      Latitude
-                    </label>
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div className="relative flex-1">
+                    <SearchIcon className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
-                      inputMode="decimal"
-                      placeholder="12.9716"
-                      value={lat}
-                      onChange={(e) => setLat(e.target.value)}
+                      value={searchText}
+                      onChange={(e) => setSearchText(e.target.value)}
+                      placeholder="Search communities by name or city…"
+                      className="pl-9"
                     />
                   </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      Longitude
-                    </label>
-                    <Input
-                      inputMode="decimal"
-                      placeholder="77.5946"
-                      value={lng}
-                      onChange={(e) => setLng(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      Radius (km)
-                    </label>
-                    <Input
-                      inputMode="decimal"
-                      value={radius}
-                      onChange={(e) => setRadius(e.target.value)}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground">
-                      Category
-                    </label>
+                  <div className="w-full sm:w-44">
                     <Select
                       value={category}
                       onValueChange={(v) => setCategory(v as Category)}
@@ -232,7 +221,7 @@ export default function Page() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">All</SelectItem>
+                        <SelectItem value="all">All categories</SelectItem>
                         <SelectItem value="fitness">Fitness</SelectItem>
                         <SelectItem value="spiritual">Spiritual</SelectItem>
                         <SelectItem value="hobby">Hobby</SelectItem>
@@ -245,35 +234,124 @@ export default function Page() {
                   </div>
                 </div>
 
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    Or pick:
-                  </span>
-                  {LOCATION_PRESETS.map((p) => (
-                    <Button
-                      key={p.label}
-                      size="sm"
-                      variant="outline"
-                      onClick={() => applyPreset(p)}
-                    >
-                      {p.label}
-                    </Button>
-                  ))}
-                  <Button
-                    size="sm"
-                    className="ml-auto"
-                    onClick={() => setDiscoverReady(true)}
-                    disabled={!discoverArgs}
+                {/* Advanced — lat/lng/radius for precise near-me search. */}
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setAdvancedOpen((v) => !v)}
+                    className="flex items-center gap-1 text-xs font-medium text-muted-foreground transition hover:text-foreground"
                   >
-                    <SearchIcon className="size-3.5" />
-                    Search
-                  </Button>
+                    <ChevronDownIcon
+                      className={`size-3 transition-transform ${
+                        advancedOpen ? "rotate-180" : ""
+                      }`}
+                    />
+                    Advanced search (by coordinates)
+                  </button>
+                  {advancedOpen ? (
+                    <div className="mt-3 rounded-md border bg-background p-3">
+                      <p className="text-xs text-muted-foreground">
+                        Paste a lat/lng pair or pick a city preset. We&apos;ll
+                        scan a rough 3×3 grid and filter to anything within
+                        your radius.
+                      </p>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                        <div>
+                          <label className="text-xs text-muted-foreground">
+                            Latitude
+                          </label>
+                          <Input
+                            inputMode="decimal"
+                            placeholder="12.9716"
+                            value={lat}
+                            onChange={(e) => setLat(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">
+                            Longitude
+                          </label>
+                          <Input
+                            inputMode="decimal"
+                            placeholder="77.5946"
+                            value={lng}
+                            onChange={(e) => setLng(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-muted-foreground">
+                            Radius (km)
+                          </label>
+                          <Input
+                            inputMode="decimal"
+                            value={radius}
+                            onChange={(e) => setRadius(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          Or pick:
+                        </span>
+                        {LOCATION_PRESETS.map((p) => (
+                          <Button
+                            key={p.label}
+                            size="sm"
+                            variant="outline"
+                            onClick={() => applyPreset(p)}
+                          >
+                            {p.label}
+                          </Button>
+                        ))}
+                        <Button
+                          size="sm"
+                          className="ml-auto"
+                          onClick={() => setDiscoverReady(true)}
+                          disabled={!discoverArgs}
+                        >
+                          <SearchIcon className="size-3.5" />
+                          Search nearby
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
-              {!discoverReady ? (
+              {/* Results — text-search results take priority when active;
+                  otherwise fall back to near-me results once the user has
+                  run an advanced search. */}
+              {debouncedSearch ? (
+                textSearchResults === undefined ? (
+                  <p className="text-sm text-muted-foreground">Searching…</p>
+                ) : textSearchResults.length === 0 ? (
+                  <div className="rounded-lg border border-dashed p-8 text-center">
+                    <p className="text-sm font-medium">
+                      No communities match &ldquo;{debouncedSearch}&rdquo;.
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Try a broader term or use Advanced search for a
+                      coordinate-based radius.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {textSearchResults.map(
+                      ({ community, myRole, pendingRequest }) => (
+                        <CommunityCard
+                          key={community._id}
+                          community={community}
+                          myRole={myRole}
+                          pendingRequest={pendingRequest}
+                        />
+                      ),
+                    )}
+                  </div>
+                )
+              ) : !discoverReady ? (
                 <p className="text-sm text-muted-foreground">
-                  Waiting for coordinates…
+                  Start typing a name or city, or open Advanced search for
+                  near-me results.
                 </p>
               ) : discoverResults === undefined ? (
                 <p className="text-sm text-muted-foreground">Loading…</p>

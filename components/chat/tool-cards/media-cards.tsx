@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { ExternalLinkIcon, MusicIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -27,8 +28,10 @@ type SearchEnvelope = {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Songs (Spotify) — includes an inline iframe embed for track results so the
-// user can listen without leaving the chat.
+// Songs (Spotify) — dense poster grid with square album art + title + subtitle.
+// Tracks get an inline 80px Spotify compact player; albums / artists / shows
+// just link out (their default embed is ~352px and would make the chat bubble
+// taller than the viewport for a 6-result query).
 // ─────────────────────────────────────────────────────────────────────────────
 
 export function SearchSongsCard({
@@ -49,7 +52,12 @@ export function SearchSongsCard({
     )
   }
   return (
-    <div className={cn("space-y-3", className)}>
+    <div
+      className={cn(
+        "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4",
+        className,
+      )}
+    >
       {results.map((r) => (
         <SongCard key={`${r.source}-${r.kind ?? "item"}-${r.id}`} data={r} />
       ))}
@@ -65,53 +73,80 @@ export function SongCard({
   className?: string
 }) {
   // Spotify embed URL — only works for track/album/artist/playlist/episode.
-  const embedSrc =
+  // We only render the embed inline for tracks (the `theme=0` variant is the
+  // 80px compact player). Other kinds link out instead.
+  const isTrack = data.source === "spotify" && data.kind === "track"
+  const embedSrc = isTrack
+    ? `https://open.spotify.com/embed/${data.kind}/${data.id}?theme=0`
+    : null
+  const openUrl =
     data.source === "spotify" && data.kind
-      ? `https://open.spotify.com/embed/${data.kind}/${data.id}`
+      ? `https://open.spotify.com/${data.kind}/${data.id}`
       : null
+
   return (
     <div
-      className={cn("overflow-hidden rounded-lg border bg-card", className)}
+      className={cn(
+        "group flex flex-col overflow-hidden rounded-lg border bg-card",
+        className,
+      )}
     >
-      <div className="flex items-start gap-3 p-3">
-        {data.imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={data.imageUrl}
-            alt=""
-            loading="lazy"
-            className="size-14 shrink-0 rounded-md object-cover"
-          />
-        ) : (
-          <div className="size-14 shrink-0 rounded-md bg-gradient-to-br from-green-500 to-emerald-700" />
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="truncate text-sm font-medium">{data.title}</p>
-            {data.kind && (
-              <Badge variant="outline" className="text-[10px]">
-                {data.kind}
-              </Badge>
-            )}
-          </div>
-          {data.subtitle && (
-            <p className="truncate text-xs text-muted-foreground">
-              {data.subtitle}
-            </p>
-          )}
+      {data.imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={data.imageUrl}
+          alt=""
+          loading="lazy"
+          className="aspect-square w-full object-cover"
+        />
+      ) : (
+        <div className="flex aspect-square w-full items-center justify-center bg-gradient-to-br from-emerald-500 to-emerald-700 text-white">
+          <MusicIcon className="size-8 opacity-80" />
         </div>
+      )}
+      <div className="flex flex-1 flex-col gap-1 p-2">
+        <p
+          className="line-clamp-2 text-xs font-medium leading-tight"
+          title={data.title}
+        >
+          {data.title}
+        </p>
+        {data.subtitle && (
+          <p
+            className="line-clamp-1 text-[10px] text-muted-foreground"
+            title={data.subtitle}
+          >
+            {data.subtitle}
+          </p>
+        )}
+        {data.kind && (
+          <Badge
+            variant="outline"
+            className="mt-auto w-fit text-[9px] uppercase tracking-wide"
+          >
+            {data.kind}
+          </Badge>
+        )}
       </div>
-      {embedSrc && (
+      {embedSrc ? (
         <iframe
           title={data.title}
           src={embedSrc}
-          // Track gets a compact player; albums/artists take more vertical
-          // room (352 matches Spotify's default).
-          style={{ height: data.kind === "track" ? 80 : 352 }}
-          className="block w-full"
+          height={92}
+          className="block w-full border-t"
           allow="encrypted-media"
         />
-      )}
+      ) : openUrl ? (
+        <a
+          href={openUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-center gap-1 border-t bg-muted/30 px-2 py-1.5 text-[11px] font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground"
+        >
+          <ExternalLinkIcon className="size-3" />
+          Open in Spotify
+        </a>
+      ) : null}
     </div>
   )
 }

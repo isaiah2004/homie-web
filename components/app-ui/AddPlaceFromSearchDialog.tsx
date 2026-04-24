@@ -46,6 +46,7 @@ type ResolvedPlace = {
   address: string
   tags: string[]
   visibility: Visibility
+  imageUrl?: string
 }
 
 type SearchResult = {
@@ -145,6 +146,7 @@ export function AddPlaceFromSearchDialog({
       address: place.address ?? "",
       tags: [],
       visibility: "friends",
+      imageUrl: place.imageUrl,
     })
     toast.success(`Added "${place.name}"!`)
     reset()

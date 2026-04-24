@@ -70,6 +70,7 @@ import {
 } from "@/components/app-ui/EventInterestsField"
 import { MediaCard } from "@/components/app-ui/MediaCard"
 import { AddPlaceFromSearchDialog } from "@/components/app-ui/AddPlaceFromSearchDialog"
+import { ProfilePhotoUpload } from "@/components/app-ui/ProfilePhotoUpload"
 import { cn } from "@/lib/utils"
 
 // ── Schemas ──────────────────────────────────────────────────────────────────
@@ -109,6 +110,7 @@ const placeSchema = z.object({
   address: z.string().optional().or(z.literal("")),
   tags: z.array(z.string()),
   visibility: visibilityEnum,
+  imageUrl: z.string().url().optional().or(z.literal("")),
 })
 
 const workplaceSchema = z.object({
@@ -739,6 +741,10 @@ export function UserInfoForm() {
             </div>
           </div>
           <FieldGroup className="gap-4">
+            <ProfilePhotoUpload
+              devAvatar={activeUser.avatar}
+              devName={activeUser.fullName}
+            />
             <div className="grid gap-4 sm:grid-cols-2">
               <Field className="gap-2">
                 <div className="flex items-center">

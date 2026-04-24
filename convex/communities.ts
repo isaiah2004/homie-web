@@ -101,6 +101,14 @@ export const createCommunity = mutation({
     locationLng: v.number(),
     locationLabel: v.optional(v.string()),
     locationRadiusKm: v.number(),
+    // Optional rich-location metadata. Present when the creator picked
+    // a location from the Places search dialog rather than entering
+    // lat/lng by hand.
+    locationPlaceId: v.optional(v.string()),
+    locationMapsUri: v.optional(v.string()),
+    locationAddress: v.optional(v.string()),
+    locationCity: v.optional(v.string()),
+    locationCountry: v.optional(v.string()),
     isPublic: v.boolean(),
     coverImageUrl: v.optional(v.string()),
     avatarUrl: v.optional(v.string()),
@@ -152,6 +160,11 @@ export const createCommunity = mutation({
       locationLng: args.locationLng,
       locationLabel: args.locationLabel,
       locationRadiusKm: args.locationRadiusKm,
+      locationPlaceId: args.locationPlaceId,
+      locationMapsUri: args.locationMapsUri,
+      locationAddress: args.locationAddress,
+      locationCity: args.locationCity,
+      locationCountry: args.locationCountry,
       isPublic: args.isPublic,
       isPaid: false,
       createdBy: callerId,
@@ -191,6 +204,11 @@ export const updateCommunity = mutation({
       locationLng: v.optional(v.number()),
       locationLabel: v.optional(v.string()),
       locationRadiusKm: v.optional(v.number()),
+      locationPlaceId: v.optional(v.string()),
+      locationMapsUri: v.optional(v.string()),
+      locationAddress: v.optional(v.string()),
+      locationCity: v.optional(v.string()),
+      locationCountry: v.optional(v.string()),
       isPublic: v.optional(v.boolean()),
     }),
   },
@@ -426,6 +444,84 @@ export const discoverCommunities = query({
 
     results.sort((a, b) => a.distanceKm - b.distanceKm)
     return results
+  },
+})
+
+// Text search across public communities. Matches the query against both the
+// community name AND the city field in parallel, then merges + dedupes. Used
+// by the Discover tab's simple search bar; for geospatial "near me" search
+// use `discoverCommunities` instead.
+export const searchCommunitiesByText = query({
+  args: {
+    devUserId: v.optional(v.id("users")),
+    query: v.string(),
+    category: v.optional(CATEGORY_VALIDATOR),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const callerId = await resolveCallerId(ctx, {
+      devUserId: args.devUserId,
+    })
+    const q = args.query.trim()
+    if (q.length === 0) return []
+    const limit = Math.min(Math.max(args.limit ?? 20, 1), 50)
+
+    // Two parallel full-text queries. Each search index already filters
+    // to `isPublic: true` and (optionally) the requested category.
+    const runSearch = async (indexName: "search_name" | "search_city") =>
+      await ctx.db
+        .query("communities")
+        .withSearchIndex(indexName, (sq) => {
+          let builder = sq.search(
+            indexName === "search_name" ? "name" : "locationCity",
+            q,
+          )
+          builder = builder.eq("isPublic", true)
+          if (args.category !== undefined) {
+            builder = builder.eq("category", args.category)
+          }
+          return builder
+        })
+        .take(limit)
+
+    const [byName, byCity] = await Promise.all([
+      runSearch("search_name"),
+      runSearch("search_city"),
+    ])
+
+    // Merge, preserving name-hit order first (higher intent signal) and
+    // deduping by _id.
+    const seen = new Set<string>()
+    const merged: Doc<"communities">[] = []
+    for (const row of [...byName, ...byCity]) {
+      if (seen.has(row._id)) continue
+      seen.add(row._id)
+      merged.push(row)
+      if (merged.length >= limit) break
+    }
+
+    // Enrich with the caller's role + pending-request state so cards can
+    // render the right CTA (same shape as `discoverCommunities`).
+    const enriched = await Promise.all(
+      merged.map(async (c) => {
+        const membership = await getMembership(ctx, c._id, callerId)
+        const pending = membership
+          ? false
+          : !!(await ctx.db
+              .query("communityJoinRequests")
+              .withIndex("by_community_and_user", (qq) =>
+                qq.eq("communityId", c._id).eq("userId", callerId),
+              )
+              .unique()
+              .then((r) => r && r.status === "pending"))
+        return {
+          community: c,
+          myRole: (membership?.role ?? null) as CommunityRole | null,
+          pendingRequest: pending,
+        }
+      }),
+    )
+    return enriched
   },
 })
 

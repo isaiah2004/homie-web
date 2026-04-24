@@ -247,6 +247,7 @@ export const createUser = mutation({
       address: v.optional(v.string()),
       tags: v.array(v.string()),
       visibility: v.union(v.literal("close"), v.literal("friends"), v.literal("mutual"), v.literal("none")),
+      imageUrl: v.optional(v.string()),
     }))),
     projects: v.optional(v.array(v.object({
       title: v.string(),
@@ -310,6 +311,7 @@ export const updateUser = mutation({
         address: v.optional(v.string()),
         tags: v.array(v.string()),
         visibility: v.union(v.literal("close"), v.literal("friends"), v.literal("mutual"), v.literal("none")),
+        imageUrl: v.optional(v.string()),
       }))),
       projects: v.optional(v.array(v.object({
         title: v.string(),
@@ -369,6 +371,7 @@ export const getOrCreateUser = mutation({
     email: v.string(),
     name: v.optional(v.string()),
     username: v.optional(v.string()),
+    avatar: v.optional(v.string()),
     accountType: v.optional(
       v.union(v.literal("personal"), v.literal("business")),
     ),
@@ -385,6 +388,7 @@ export const getOrCreateUser = mutation({
       const patch: {
         username?: string;
         name?: string;
+        avatar?: string;
         accountType?: "personal" | "business";
       } = {};
       if (
@@ -408,6 +412,11 @@ export const getOrCreateUser = mutation({
       // avatars, and @mentions always show the authoritative name.
       if (args.name && args.name.trim() && args.name !== existingUser.name) {
         patch.name = args.name.trim();
+      }
+      // Same story for avatar — Clerk hosts the image and is the source of
+      // truth; we just mirror the URL here for UI that renders from Convex.
+      if (args.avatar && args.avatar !== existingUser.avatar) {
+        patch.avatar = args.avatar;
       }
       // Backfill accountType for pre-existing rows that never had the
       // field set, but NEVER overwrite an already-set value.
@@ -441,6 +450,7 @@ export const getOrCreateUser = mutation({
       name: args.name ?? "User",
       email: args.email,
       username: normalizedUsername,
+      avatar: args.avatar,
       accountType: args.accountType ?? "personal",
       dob: "",
       visibility: "friends",
@@ -498,6 +508,7 @@ export const updateProfile = mutation({
         address: v.optional(v.string()),
         tags: v.array(v.string()),
         visibility: v.union(v.literal("close"), v.literal("friends"), v.literal("mutual"), v.literal("none")),
+        imageUrl: v.optional(v.string()),
       }))),
       projects: v.optional(v.array(v.object({
         title: v.string(),

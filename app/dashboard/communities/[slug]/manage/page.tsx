@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import {
   ArrowLeftIcon,
   CheckIcon,
+  MapPinIcon,
   MegaphoneIcon,
   MinusCircleIcon,
   MoreHorizontalIcon,
@@ -21,6 +22,7 @@ import { useIdentifiedMutation } from "@/hooks/use-identified"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { AdCard } from "@/components/ad-card"
+import { EditCommunityDetailsForm } from "@/components/app-ui/EditCommunityDetailsForm"
 import { SiteHeader } from "@/components/site-header"
 import { PageShell } from "@/components/dashboard-layout"
 import { Badge } from "@/components/ui/badge"
@@ -223,8 +225,9 @@ export default function Page() {
             </p>
           </div>
 
-          <Tabs defaultValue="requests" className="mt-4">
+          <Tabs defaultValue="details" className="mt-4">
             <TabsList className="self-start">
+              <TabsTrigger value="details">Details</TabsTrigger>
               <TabsTrigger value="requests">
                 Requests
                 {requests && requests.length > 0 && (
@@ -237,6 +240,12 @@ export default function Page() {
               <TabsTrigger value="events">Events</TabsTrigger>
               <TabsTrigger value="ads">Ads</TabsTrigger>
             </TabsList>
+
+            <TabsContent value="details" className="mt-4">
+              <div className="rounded-lg border bg-card p-4 md:p-6">
+                <EditCommunityDetailsForm community={community} />
+              </div>
+            </TabsContent>
 
             <TabsContent value="requests" className="mt-4">
               <div className="rounded-lg border bg-card">
@@ -267,6 +276,12 @@ export default function Page() {
                               @{user.username}
                             </p>
                           )}
+                          <p className="mt-0.5 flex items-center gap-1 truncate text-xs text-muted-foreground">
+                            <MapPinIcon className="size-3 shrink-0" />
+                            {user?.location?.trim()
+                              ? user.location
+                              : "Location not specified"}
+                          </p>
                           {request.message && (
                             <p className="mt-1 text-xs text-muted-foreground">
                               “{request.message}”

@@ -68,6 +68,7 @@ function ProdBootstrap() {
       email,
       name: user.fullName ?? undefined,
       username: user.username ?? undefined,
+      avatar: user.imageUrl || undefined,
       accountType,
     }).catch((err) => {
       // Bootstrapping is best-effort — most pages call `getOrCreateUser`
