@@ -3,6 +3,7 @@ import {
   mutation,
   query,
   internalMutation,
+  internalQuery,
   QueryCtx,
   MutationCtx,
 } from "./_generated/server";
@@ -164,6 +165,89 @@ export const listAgentResponses = query({
       )
       .order("desc")
       .take(cap);
+  },
+});
+
+// Summary of every DM thread with unread messages for `askerId`. For each
+// such thread returns the other user's display info, the unread count, and
+// a preview (up to 3) of the unread messages. Used by the chat
+// `summarizeUnreads` tool — the tool itself composes a natural-language
+// summary; this internal query just surfaces the raw rows.
+export const summarizeUnreadsInternal = internalQuery({
+  args: { askerId: v.id("users") },
+  handler: async (ctx, { askerId }) => {
+    const asA = await ctx.db
+      .query("dmConversations")
+      .withIndex("by_userA", (q) => q.eq("userAId", askerId))
+      .collect();
+    const asB = await ctx.db
+      .query("dmConversations")
+      .withIndex("by_userB", (q) => q.eq("userBId", askerId))
+      .collect();
+    const convs = [...asA, ...asB].sort(
+      (x, y) => y.lastMessageAt - x.lastMessageAt,
+    );
+
+    const threads: Array<{
+      conversationId: Id<"dmConversations">;
+      other: {
+        _id: Id<"users">;
+        name: string;
+        username: string | null;
+        avatar: string | null;
+      };
+      unreadCount: number;
+      previews: Array<{
+        from: "them" | "me";
+        content: string;
+        sentAt: number;
+      }>;
+      lastMessageAt: number;
+    }> = [];
+
+    for (const conv of convs) {
+      const otherId = otherParticipant(conv, askerId);
+      const other = await ctx.db.get(otherId);
+      if (!other) continue;
+      const unread = await ctx.db
+        .query("directMessages")
+        .withIndex("by_conversation", (q) =>
+          q.eq("conversationId", conv._id),
+        )
+        .filter((q) =>
+          q.and(
+            q.eq(q.field("to"), askerId),
+            q.eq(q.field("readAt"), undefined),
+          ),
+        )
+        .collect();
+      if (unread.length === 0) continue;
+      // Strip HTML-ish wrapping from preview content. This is a best-effort
+      // plain-text rendering — the actual chat UI still honours the stored
+      // format field on click-through.
+      const previewSlice = unread.slice(-3).map((m) => ({
+        from: (m.from === askerId ? "me" : "them") as "me" | "them",
+        content: m.content
+          .replace(/<[^>]+>/g, " ")
+          .replace(/\s+/g, " ")
+          .trim()
+          .slice(0, 240),
+        sentAt: m.sentAt,
+      }));
+      threads.push({
+        conversationId: conv._id,
+        other: {
+          _id: other._id,
+          name: other.name,
+          username: other.username ?? null,
+          avatar: other.avatar ?? null,
+        },
+        unreadCount: unread.length,
+        previews: previewSlice,
+        lastMessageAt: conv.lastMessageAt,
+      });
+    }
+    return threads;
   },
 });
 

@@ -18,6 +18,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import { MessageCircle, History, Sparkles, Mic, MicOff, Menu, Trash2, Phone } from "lucide-react"
 import { toast } from "sonner"
+import type { PersistedPart } from "@/components/chat/tool-cards/types"
 
 // Voice chat is gated behind an allowlist while we work out unit economics —
 // Vapi minutes are expensive and we don't want anonymous prod users running
@@ -36,6 +37,7 @@ interface Message {
   senderName?: string
   isVoice?: boolean
   role?: "user" | "assistant" | "system"
+  parts?: PersistedPart[]
 }
 
 interface Conversation {
@@ -114,7 +116,12 @@ export default function Page() {
     sender: msg.role === "user" ? "user" : "other",
     senderName: msg.role === "assistant" ? "Homie" : undefined,
     timestamp: new Date(msg._creationTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-    role: msg.role
+    role: msg.role,
+    // Pass through stored rich-UI parts (tool calls + text). When absent
+    // the chat falls back to the markdown renderer via `content`.
+    parts: Array.isArray(msg.parts)
+      ? (msg.parts as PersistedPart[])
+      : undefined,
   }))
 
   // Create new conversation mutation

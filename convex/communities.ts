@@ -474,3 +474,57 @@ export const listAdminIdsInternal = internalQuery({
     return rows.map((r) => r.userId)
   },
 })
+
+// Communities the asker is a member of, plus their role. Used by chat tools
+// that can't read ctx.auth (actions) and need to enumerate without the
+// resolveCallerId Clerk detour.
+export const listMyCommunitiesInternal = internalQuery({
+  args: { askerId: v.id("users") },
+  handler: async (ctx, { askerId }) => {
+    const memberships = await ctx.db
+      .query("communityMembers")
+      .withIndex("by_user", (q) => q.eq("userId", askerId))
+      .collect()
+    const out: Array<{
+      community: Doc<"communities">
+      role: CommunityRole
+    }> = []
+    for (const m of memberships) {
+      const c = await ctx.db.get(m.communityId)
+      if (!c) continue
+      out.push({ community: c, role: m.role as CommunityRole })
+    }
+    out.sort((a, b) => b.community.createdAt - a.community.createdAt)
+    return out
+  },
+})
+
+// Substring match on community name, limited to communities the asker is a
+// member of. Case-insensitive. Used so the chat tool can resolve a
+// natural-language community name ("my running group") to an id.
+export const findCommunityByNameForUserInternal = internalQuery({
+  args: {
+    askerId: v.id("users"),
+    query: v.string(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const needle = args.query.trim().toLowerCase()
+    if (!needle) return []
+    const memberships = await ctx.db
+      .query("communityMembers")
+      .withIndex("by_user", (q) => q.eq("userId", args.askerId))
+      .collect()
+    const matches: Array<{
+      community: Doc<"communities">
+      role: CommunityRole
+    }> = []
+    for (const m of memberships) {
+      const c = await ctx.db.get(m.communityId)
+      if (!c) continue
+      if (!c.name.toLowerCase().includes(needle)) continue
+      matches.push({ community: c, role: m.role as CommunityRole })
+    }
+    return matches.slice(0, Math.min(args.limit ?? 6, 20))
+  },
+})

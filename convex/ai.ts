@@ -5,7 +5,23 @@ import { api, internal } from "./_generated/api";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText, stepCountIs } from "ai";
 import type { Doc, Id } from "./_generated/dataModel";
-import { buildAgentTools } from "./agentTools";
+import { buildChatTools } from "./agentTools";
+
+// Part shape we persist on `conversationMessages.parts`. Mirrors the AI SDK
+// UIMessage shape closely enough that the client-side renderer can switch
+// on `type` / `toolName` without an extra translation layer. Using a flat
+// object (rather than a union) because every field ends up optional on the
+// wire anyway — the schema validator is what enforces it.
+type PersistedPart = {
+  type: string; // "text" | `tool-${name}`
+  text?: string;
+  toolName?: string;
+  toolCallId?: string;
+  input?: string;
+  output?: string;
+  state?: "input-available" | "output-available" | "output-error";
+  errorText?: string;
+};
 
 // NOTE: Per project rules, this file is the ONLY convex module modified for
 // the business-variant AI work. Business-specific prompt enrichment (business
@@ -18,18 +34,40 @@ import { buildAgentTools } from "./agentTools";
 const CHAT_MODEL = "gemini-2.5-flash";
 
 // System prompt for personal-account users. This is the classic Homie voice —
-// a friendly, opinionated guide to the asker's friend graph. The friend-graph
-// tools (findFriendPlaces, etc.) are wired via `buildAgentTools(ctx, askerId)`.
+// a friendly, opinionated guide to the asker's friend graph AND provider-
+// backed discovery surface. See convex/agentTools.ts → buildChatTools() for
+// the tool catalog this prompt refers to.
 const PERSONAL_SYSTEM_PROMPT = [
-  "You are Homie — a friendly, concise assistant the user chats with about their friends, what they like, and where they go.",
-  "You have four tools that search the asker's friend graph by embedding similarity:",
-  "  • findFriendPlaces — restaurants, cafes, bars, parks, gyms, etc.",
-  "  • findFriendMedia  — movies, games, books, anime, music, etc.",
-  "  • findFriendProjects — what friends are building.",
-  "  • findFriendInterests — free-text interest tags.",
-  "When the user asks for a recommendation, opinion, or 'what do my friends like / where do they go', ALWAYS call the matching tool first — never make up names. If they mention a location or address, pass it verbatim into the tool's `query`.",
-  "After calling tools, summarize results naturally. Mention who recommended each item (use the `recommendedBy` / `ownerName` field). If the tool returns an empty list, say so plainly and suggest the asker add more friends or that their friends add the relevant items to their profile.",
-  "Keep replies under 200 words unless the asker asked for a long list.",
+  "You are Homie — a friendly, concise assistant the user chats with about their friends, their communities, their events, and things they might enjoy.",
+  "",
+  "CRITICAL RENDERING RULE: the chat UI renders rich cards for every tool you call. When a tool is the right way to answer, ALWAYS call the tool and let the UI render the card. DO NOT describe places, songs, movies, events, friends, communities, or announcements in prose when a tool can return them — keep your own text to a 1-2 sentence framing line at most.",
+  "",
+  "Tool catalog:",
+  "  Friend-graph search (embedding):",
+  "    • findFriendPlaces — restaurants, cafes, bars, parks, gyms — when the user asks 'where should I go' / 'what do my friends like' scoped to places.",
+  "    • findFriendMedia  — movies, games, books, anime, music — scoped search.",
+  "    • findFriendProjects — what friends are building.",
+  "    • findFriendInterests — free-text interest tags.",
+  "  Social analytics:",
+  "    • findFriendsWithSharedMedia — EXACT overlap between the asker's profile and each friend's profile by media type/provider. Use when the user asks 'which of my friends listens to the same music as me', 'which friends share my taste in anime', etc.",
+  "    • findFriendsInCommunity — which of the asker's friends are also members of a given community. Call `findCommunityByName` first if you only have a name.",
+  "  Communities:",
+  "    • listMyCommunities — enumerate the asker's communities.",
+  "    • findCommunityByName — resolve a natural-language name → id.",
+  "    • listRecentAnnouncements — recent announcements from the asker's communities. Default when asked 'what's happening in my communities'.",
+  "  Events:",
+  "    • getEventRsvpSummary — 'how many people have confirmed X', 'who's coming to Y'.",
+  "    • listMyUpcomingEvents — the asker's schedule.",
+  "  Inbox:",
+  "    • summarizeUnreads — 'what unreads do I have' / 'summarise my messages'.",
+  "  Discovery (provider-backed cards):",
+  "    • searchPlaces, searchSongs, searchMovies, searchBooks, searchGames, searchAnime — call the right one whenever the user asks for recommendations NOT scoped to their friends.",
+  "",
+  "Behaviour:",
+  "  • If a tool returns an empty list, say so briefly and suggest the next step (add more friends, add items to profile, widen the query).",
+  "  • When the user mentions a specific friend, community, or event by name, resolve the id with a finder tool first, then call the detail tool.",
+  "  • Never fabricate ids — if you can't resolve one, ask the user to clarify.",
+  "  • Keep reply text under 120 words. The cards carry the detail.",
 ].join("\n");
 
 // System prompt for business accounts. Shifts the tone from "friend finder"
@@ -145,30 +183,121 @@ export const generateAIResponse = action({
 
     const google = createGoogleGenerativeAI({ apiKey: googleKey });
 
-    // Personal accounts get the friend-graph search tools. Business accounts
-    // don't — there's no business-side "friends" concept, and the personal
-    // tools would surface data the business owner isn't entitled to see via
-    // this channel. Business replies are pure text strategy for now.
+    // Personal accounts get the friend-graph search + provider discovery
+    // tools. Business accounts don't — there's no business-side "friends"
+    // concept, and the personal tools would surface data the business
+    // owner isn't entitled to see via this channel. Business replies are
+    // pure text strategy for now.
     const tools =
       accountType === "business"
         ? undefined
-        : buildAgentTools(ctx, askerId);
+        : buildChatTools(ctx, askerId);
 
-    const { text } = await generateText({
+    // Collect structured parts (text + tool calls/results) across every step
+    // so we can persist them for rich-UI rendering. `onStepFinish` fires
+    // once per model step; we append that step's content to the part list.
+    const parts: PersistedPart[] = [];
+    const pendingToolInputs = new Map<string, { name: string; input: string }>();
+
+    const result = await generateText({
       model: google(CHAT_MODEL),
       system: systemPrompt,
       messages: chatHistory,
       tools,
       stopWhen: stepCountIs(5),
       temperature: 0.7,
+      onStepFinish: (step) => {
+        // Text deltas from this step.
+        if (step.text && step.text.length > 0) {
+          parts.push({ type: "text", text: step.text });
+        }
+        // Tool calls issued during this step. Record input so the matching
+        // tool-result can be marked output-available later.
+        const stepToolCalls = (step.toolCalls ?? []) as Array<{
+          toolCallId: string;
+          toolName: string;
+          input?: unknown;
+          args?: unknown;
+        }>;
+        for (const call of stepToolCalls) {
+          const input = call.input ?? call.args;
+          const inputStr = safeStringify(input);
+          pendingToolInputs.set(call.toolCallId, {
+            name: call.toolName,
+            input: inputStr,
+          });
+          parts.push({
+            type: `tool-${call.toolName}`,
+            toolName: call.toolName,
+            toolCallId: call.toolCallId,
+            input: inputStr,
+            state: "input-available",
+          });
+        }
+        // Tool results for the calls issued this step (or earlier steps).
+        const stepToolResults = (step.toolResults ?? []) as Array<{
+          toolCallId: string;
+          toolName: string;
+          output?: unknown;
+          result?: unknown;
+        }>;
+        for (const tr of stepToolResults) {
+          const meta = pendingToolInputs.get(tr.toolCallId);
+          const output = tr.output ?? tr.result;
+          const outputStr = safeStringify(output);
+          // Replace the placeholder input-available part (if any) with the
+          // completed one so the UI doesn't render two cards per call.
+          const idx = parts.findIndex(
+            (p) =>
+              p.type !== "text" &&
+              "toolCallId" in p &&
+              p.toolCallId === tr.toolCallId,
+          );
+          const completedPart: PersistedPart = {
+            type: `tool-${tr.toolName}`,
+            toolName: tr.toolName,
+            toolCallId: tr.toolCallId,
+            input: meta?.input,
+            output: outputStr,
+            state: "output-available",
+          };
+          if (idx >= 0) {
+            parts[idx] = completedPart;
+          } else {
+            parts.push(completedPart);
+          }
+        }
+      },
     });
+
+    // If `onStepFinish` never fired (shouldn't happen with generateText but
+    // stays safe), fall back to the aggregate text on the result.
+    if (parts.length === 0 && result.text) {
+      parts.push({ type: "text", text: result.text });
+    }
 
     await ctx.runMutation(api.conversationMessages.createMessage, {
       conversationId: args.conversationId,
       role: "assistant",
-      content: text,
+      content: result.text,
+      parts,
     });
 
-    return text;
+    return result.text;
   },
 });
+
+// JSON.stringify with a graceful fallback for values that don't round-trip
+// (cycles, BigInt). Keeps the persisted `input`/`output` columns human-
+// readable without blowing up the whole chat turn on edge cases.
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    try {
+      return String(value);
+    } catch {
+      return "";
+    }
+  }
+}

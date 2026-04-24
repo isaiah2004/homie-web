@@ -10,6 +10,10 @@ import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
 import { MessageContent } from "@/components/chat/message-content"
 import {
+  ToolPartsList,
+} from "@/components/chat/tool-cards/tool-part-renderer"
+import type { PersistedPart } from "@/components/chat/tool-cards/types"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -24,6 +28,10 @@ interface Message {
   timestamp: string
   senderName?: string
   isVoice?: boolean
+  // When set (assistant rich-UI messages), the chat renders each part via
+  // ToolPartRenderer instead of the plain markdown pass. `content` still
+  // serves as a fallback for older rows that predate parts.
+  parts?: PersistedPart[]
 }
 
 interface Chat {
@@ -154,35 +162,70 @@ export function ChatMain({
       {/* Messages Area */}
       <ScrollArea ref={scrollAreaRef} className="flex-1 min-h-0 p-4">
         <div className="space-y-4">
-          {messages.map((message) => (
-            <div
-              key={`msg-${message.id}`}
-              className={`flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
-            >
-              <div
-                className={`max-w-[70%] rounded-lg p-3 ${
+          {messages.map((message) => {
+            const hasRichParts =
+              message.sender !== "user" &&
+              Array.isArray(message.parts) &&
+              message.parts.length > 0 &&
+              // Only use the parts path if there's at least one tool part;
+              // pure-text messages stick with the existing markdown renderer
+              // so we keep homie://event links, embeds, etc.
+              message.parts.some((p) => p.type !== "text" && p.toolName)
+            // Rich-UI bubbles widen out — tool cards look cramped in the
+            // 70%-width chat bubble so we drop the width cap and the
+            // "assistant bubble" tint for those.
+            const bubbleClass = hasRichParts
+              ? "max-w-[92%] w-full rounded-lg p-3 bg-transparent"
+              : `max-w-[70%] rounded-lg p-3 ${
                   message.sender === "user"
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted"
-                }`}
+                }`
+            return (
+              <div
+                key={`msg-${message.id}`}
+                className={`flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
               >
-                {message.sender === "other" && message.senderName && (
-                  <p className="text-xs font-medium mb-1 opacity-70">
-                    {message.senderName}
-                  </p>
-                )}
-                <MessageContent content={message.content} isUser={message.sender === "user"} />
-                <div className="flex items-center justify-between mt-1">
-                  <p className="text-xs opacity-70">{message.timestamp}</p>
-                  {message.isVoice && (
-                    <Badge variant="secondary" className="ml-2 text-xs">
-                      🎤 Voice
-                    </Badge>
+                <div className={bubbleClass}>
+                  {message.sender === "other" && message.senderName && (
+                    <p className="text-xs font-medium mb-1 opacity-70">
+                      {message.senderName}
+                    </p>
                   )}
+                  {hasRichParts && message.parts ? (
+                    <ToolPartsList
+                      parts={message.parts}
+                      textRenderer={(text, key) => (
+                        <div
+                          key={key}
+                          className="rounded-lg bg-muted p-3 text-sm"
+                        >
+                          <MessageContent
+                            content={text}
+                            format="markdown"
+                            isUser={false}
+                          />
+                        </div>
+                      )}
+                    />
+                  ) : (
+                    <MessageContent
+                      content={message.content}
+                      isUser={message.sender === "user"}
+                    />
+                  )}
+                  <div className="flex items-center justify-between mt-1">
+                    <p className="text-xs opacity-70">{message.timestamp}</p>
+                    {message.isVoice && (
+                      <Badge variant="secondary" className="ml-2 text-xs">
+                        🎤 Voice
+                      </Badge>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
           {isThinking && (
             <div className="flex justify-start">
               <div className="bg-muted rounded-lg p-3 flex items-center gap-1.5">

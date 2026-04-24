@@ -2,6 +2,7 @@ import { v } from "convex/values"
 import {
   query,
   mutation,
+  internalQuery,
   QueryCtx,
   MutationCtx,
 } from "./_generated/server"
@@ -218,6 +219,96 @@ export const listAnnouncements = query({
       }
       return b.announcement.createdAt - a.announcement.createdAt
     })
+    return enriched
+  },
+})
+
+// Recent announcements across every community the asker is a member of,
+// optionally scoped to a single community. Sorted newest-first. Used by
+// the chat `listRecentAnnouncements` tool.
+export const listRecentForUserInternal = internalQuery({
+  args: {
+    askerId: v.id("users"),
+    communityId: v.optional(v.id("communities")),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const cap = Math.min(args.limit ?? 8, 25)
+
+    let candidates: Doc<"communityAnnouncements">[]
+    let communityIds: Id<"communities">[]
+
+    if (args.communityId) {
+      // Enforce membership before exposing rows.
+      const m = await ctx.db
+        .query("communityMembers")
+        .withIndex("by_community_and_user", (q) =>
+          q.eq("communityId", args.communityId!).eq("userId", args.askerId),
+        )
+        .unique()
+      if (!m) return []
+      communityIds = [args.communityId]
+      candidates = await ctx.db
+        .query("communityAnnouncements")
+        .withIndex("by_community_and_created", (q) =>
+          q.eq("communityId", args.communityId!),
+        )
+        .order("desc")
+        .take(cap * 2)
+    } else {
+      const memberships = await ctx.db
+        .query("communityMembers")
+        .withIndex("by_user", (q) => q.eq("userId", args.askerId))
+        .collect()
+      communityIds = memberships.map((m) => m.communityId)
+      const collected: Doc<"communityAnnouncements">[] = []
+      for (const cid of communityIds) {
+        const rows = await ctx.db
+          .query("communityAnnouncements")
+          .withIndex("by_community_and_created", (q) =>
+            q.eq("communityId", cid),
+          )
+          .order("desc")
+          .take(cap)
+        collected.push(...rows)
+      }
+      candidates = collected
+    }
+
+    candidates.sort((a, b) => b.createdAt - a.createdAt)
+    const sliced = candidates.slice(0, cap)
+
+    const communityLookup = new Map<string, Doc<"communities">>()
+    for (const cid of communityIds) {
+      const c = await ctx.db.get(cid)
+      if (c) communityLookup.set(cid as string, c)
+    }
+
+    const enriched: Array<{
+      announcement: Doc<"communityAnnouncements">
+      community: {
+        _id: Id<"communities">
+        name: string
+        slug: string
+      }
+      author: { name: string; username: string | null } | null
+    }> = []
+    for (const r of sliced) {
+      const community = communityLookup.get(r.communityId as string)
+      if (!community) continue
+      const author = await ctx.db.get(r.authorId)
+      enriched.push({
+        announcement: r,
+        community: {
+          _id: community._id,
+          name: community.name,
+          slug: community.slug,
+        },
+        author: author
+          ? { name: author.name, username: author.username ?? null }
+          : null,
+      })
+    }
     return enriched
   },
 })

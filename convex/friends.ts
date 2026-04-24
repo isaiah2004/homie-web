@@ -198,6 +198,205 @@ export const getFriendIdsWithTier = internalQuery({
   },
 });
 
+// Rich-UI tool support: find friends whose profile.media overlaps with the
+// asker's, optionally filtered to a single media `type` (music/movie/book/
+// game/anime/series) AND/OR a single provider (`externalSource`).
+//
+// Overlap is computed per-item on `(externalSource, externalId)` when both
+// sides have one, else on case-insensitive title match as a fallback so
+// legacy free-text items still contribute.
+//
+// Visibility: an item only contributes to overlap if the asker is allowed
+// to see it according to `friends.canView` — i.e. mirror of the rule used
+// by `agentTools.allowedVisibilities` (close-only when the asker marks
+// them close).
+export const listFriendsWithMediaOverlapInternal = internalQuery({
+  args: {
+    askerId: v.id("users"),
+    mediaType: v.optional(
+      v.union(
+        v.literal("music"),
+        v.literal("movie"),
+        v.literal("book"),
+        v.literal("novel"),
+        v.literal("series"),
+        v.literal("podcast"),
+        v.literal("anime"),
+        v.literal("game"),
+        v.literal("other"),
+      ),
+    ),
+    externalSource: v.optional(
+      v.union(
+        v.literal("spotify"),
+        v.literal("itunes"),
+        v.literal("tvmaze"),
+        v.literal("openlibrary"),
+        v.literal("jikan"),
+        v.literal("cheapshark"),
+      ),
+    ),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const asker = await ctx.db.get(args.askerId);
+    if (!asker) return [];
+    const askerMedia = (asker.media ?? []).filter((m) => {
+      if (args.mediaType && m.type !== args.mediaType) return false;
+      if (args.externalSource && m.externalSource !== args.externalSource)
+        return false;
+      return true;
+    });
+    if (askerMedia.length === 0) return [];
+
+    // Build lookup keys for the asker's items. Prefer the provider id when
+    // present because that's the canonical dedup key; fall back to title.
+    type Key =
+      | { kind: "ext"; source: string; id: string }
+      | { kind: "title"; value: string };
+    const askerKeys: Array<{ key: Key; item: (typeof askerMedia)[number] }> =
+      askerMedia.map((m) => {
+        if (m.externalSource && m.externalId) {
+          return {
+            key: {
+              kind: "ext",
+              source: m.externalSource,
+              id: m.externalId,
+            },
+            item: m,
+          };
+        }
+        return {
+          key: { kind: "title", value: m.title.trim().toLowerCase() },
+          item: m,
+        };
+      });
+
+    // Accepted friends of the asker with tier (for visibility).
+    const friendRows = await ctx.db
+      .query("friends")
+      .withIndex("by_user_and_status", (q) =>
+        q.eq("userId", args.askerId).eq("status", "accepted"),
+      )
+      .collect();
+
+    type OverlapRow = {
+      friendId: Id<"users">;
+      friendName: string;
+      friendUsername: string | null;
+      friendAvatar: string | null;
+      sharedItems: Array<{
+        title: string;
+        type: string;
+        subtitle: string | null;
+        imageUrl: string | null;
+        externalSource: string | null;
+        externalId: string | null;
+      }>;
+    };
+    const rows: OverlapRow[] = [];
+
+    for (const edge of friendRows) {
+      const friend = await ctx.db.get(edge.friendId);
+      if (!friend) continue;
+      const friendMedia = (friend.media ?? []).filter((m) => {
+        if (args.mediaType && m.type !== args.mediaType) return false;
+        if (args.externalSource && m.externalSource !== args.externalSource)
+          return false;
+        // Visibility gate — mirror of agentTools.allowedVisibilities.
+        // The friend is the owner; the asker is the viewer.
+        if (m.visibility === "none") return false;
+        if (m.visibility === "close" && edge.tier !== "close") return false;
+        // "friends" and "mutual" are readable as long as we're accepted
+        // friends (we already are, by virtue of being in friendRows).
+        return true;
+      });
+      if (friendMedia.length === 0) continue;
+
+      const shared: OverlapRow["sharedItems"] = [];
+      for (const m of friendMedia) {
+        const matched = askerKeys.some(({ key }) => {
+          if (key.kind === "ext") {
+            return (
+              m.externalSource === key.source && m.externalId === key.id
+            );
+          }
+          return m.title.trim().toLowerCase() === key.value;
+        });
+        if (!matched) continue;
+        shared.push({
+          title: m.title,
+          type: m.type,
+          subtitle: m.subtitle ?? null,
+          imageUrl: m.imageUrl ?? null,
+          externalSource: m.externalSource ?? null,
+          externalId: m.externalId ?? null,
+        });
+      }
+      if (shared.length === 0) continue;
+
+      rows.push({
+        friendId: friend._id,
+        friendName: friend.name,
+        friendUsername: friend.username ?? null,
+        friendAvatar: friend.avatar ?? null,
+        sharedItems: shared,
+      });
+    }
+
+    rows.sort((a, b) => b.sharedItems.length - a.sharedItems.length);
+    const capped = rows.slice(0, Math.min(args.limit ?? 12, 30));
+    return capped;
+  },
+});
+
+// Accepted-friend ids that are ALSO members of `communityId`.
+// Used by the "which of my friends is in this community" tool.
+export const listFriendsInCommunityInternal = internalQuery({
+  args: {
+    askerId: v.id("users"),
+    communityId: v.id("communities"),
+  },
+  handler: async (ctx, args) => {
+    const friendRows = await ctx.db
+      .query("friends")
+      .withIndex("by_user_and_status", (q) =>
+        q.eq("userId", args.askerId).eq("status", "accepted"),
+      )
+      .collect();
+    const friendIdSet = new Set(friendRows.map((r) => r.friendId as string));
+    if (friendIdSet.size === 0) return [];
+
+    const memberRows = await ctx.db
+      .query("communityMembers")
+      .withIndex("by_community", (q) =>
+        q.eq("communityId", args.communityId),
+      )
+      .collect();
+
+    const matches: Array<{
+      friendId: Id<"users">;
+      role: "admin" | "moderator" | "announcer" | "member";
+      friendName: string;
+      friendUsername: string | null;
+      friendAvatar: string | null;
+    }> = [];
+    for (const m of memberRows) {
+      if (!friendIdSet.has(m.userId as string)) continue;
+      const user = await ctx.db.get(m.userId);
+      if (!user) continue;
+      matches.push({
+        friendId: user._id,
+        role: m.role,
+        friendName: user.name,
+        friendUsername: user.username ?? null,
+        friendAvatar: user.avatar ?? null,
+      });
+    }
+    return matches;
+  },
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mutations
 // ─────────────────────────────────────────────────────────────────────────────

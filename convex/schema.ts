@@ -333,6 +333,33 @@ export const conversationMessages = defineTable({
     name: v.string(),
     arguments: v.string(),
   }))),
+  // Rich UI parts — AI-SDK-style tool invocations persisted so the chat UI
+  // can render dedicated cards for each tool instead of collapsing the
+  // assistant turn into plain text. `type` is either "text" or
+  // "tool-<name>". For tool parts `input` / `output` are JSON-stringified
+  // so Convex's validator doesn't need to know each tool's exact shape.
+  // Added as optional for backward compatibility with rows predating this
+  // feature.
+  parts: v.optional(
+    v.array(
+      v.object({
+        type: v.string(),
+        text: v.optional(v.string()),
+        toolName: v.optional(v.string()),
+        toolCallId: v.optional(v.string()),
+        input: v.optional(v.string()),
+        output: v.optional(v.string()),
+        state: v.optional(
+          v.union(
+            v.literal("input-available"),
+            v.literal("output-available"),
+            v.literal("output-error"),
+          ),
+        ),
+        errorText: v.optional(v.string()),
+      }),
+    ),
+  ),
 })
   .index("by_conversation", ["conversationId"])
   .index("by_conversation_and_role", ["conversationId", "role"]); // NEW: efficient role filtering
