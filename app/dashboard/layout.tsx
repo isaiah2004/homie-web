@@ -1,5 +1,6 @@
 import { AccountLockGuard } from "@/components/AccountLockGuard"
 import { AppSidebar } from "@/components/app-sidebar"
+import { BusinessRouteGuard } from "@/components/BusinessRouteGuard"
 import { ConvexUserBootstrap } from "@/components/ConvexUserBootstrap"
 
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
@@ -12,9 +13,11 @@ export default function Layout({
   return (
     // <AccountLockGuard /> wraps the entire dashboard shell so a locked child
     // account never sees the sidebar / header / page content — only the
-    // interstitial. Kept at the layout level (not inside individual pages)
-    // because the lock has to apply to every dashboard route.
+    // interstitial. <BusinessRouteGuard> soft-redirects business accounts
+    // away from personal-only surfaces. Kept at the layout level so the
+    // guards apply to every dashboard route.
     <AccountLockGuard>
+     <BusinessRouteGuard>
       <SidebarProvider
         style={
           {
@@ -30,6 +33,7 @@ export default function Layout({
         <AppSidebar variant="inset" />
         <SidebarInset>{children}</SidebarInset>
       </SidebarProvider>
+     </BusinessRouteGuard>
     </AccountLockGuard>
   )
 }
