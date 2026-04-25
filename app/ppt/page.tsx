@@ -2719,7 +2719,7 @@ export function SocialLattice({
 
     // base opacity (with flicker mixed in)
     let opacity = edgeOpacity(idx, 0.45)
-    let stroke = P.muted
+    let stroke: string = P.muted
     let width = 1
 
     // overlap mode: dim non-shared, brighten shared
