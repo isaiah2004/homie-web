@@ -39,6 +39,9 @@ test-user.txt
 build.log
 typecheck.log
 
+# Test account credentials (plaintext) — never commit
+TEST_ACCOUNTS.md
+
 # local editor / agent caches
 .claude/
 
