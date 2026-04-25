@@ -6,8 +6,10 @@ import { NavDocuments } from "@/components/nav-documents"
 import { NavMain } from "@/components/nav-main"
 import { NavSecondary } from "@/components/nav-secondary"
 import { Show, useClerk, useUser } from "@clerk/nextjs"
+import { api } from "@/convex/_generated/api"
 import { useActiveUser } from "@/hooks/use-active-user"
 import { useAccountType } from "@/hooks/use-account-type"
+import { useIdentifiedQuery } from "@/hooks/use-identified"
 import {
   Sidebar,
   SidebarContent,
@@ -58,6 +60,8 @@ import {
   MessageSquare,
   TicketIcon,
   PlugZapIcon,
+  HomeIcon,
+  ShieldCheckIcon,
 } from "lucide-react"
 
 import Link from "next/link"
@@ -110,7 +114,7 @@ const commonNav: Record<
 }
 
 const personalNav: Record<
-  "friends" | "communities" | "myCoupons",
+  "friends" | "communities" | "myCoupons" | "family" | "supervision",
   NavItem
 > = {
   friends: {
@@ -127,6 +131,20 @@ const personalNav: Record<
     title: "My Coupons",
     url: "/dashboard/my-coupons",
     icon: <TicketIcon />,
+  },
+  // Visible to non-child personal accounts only — hidden for business
+  // accounts (no concept of "family") and for child accounts (children
+  // can't manage other children).
+  family: {
+    title: "Family",
+    url: "/dashboard/family",
+    icon: <HomeIcon />,
+  },
+  // Visible to child accounts only — replaces the Family entry.
+  supervision: {
+    title: "Supervision",
+    url: "/dashboard/profile/supervision",
+    icon: <ShieldCheckIcon />,
   },
 }
 
@@ -152,6 +170,7 @@ const businessNav: Record<"businesses" | "teamChat" | "ads", NavItem> = {
 
 function buildNavForAccountType(
   accountType: "personal" | "business" | null,
+  isChild: boolean,
 ): NavItem[] {
   // Default (null = still resolving, or logged-out / no-row) -> personal.
   // A momentary flash of an extra nav item is preferable to hiding a nav
@@ -168,12 +187,22 @@ function buildNavForAccountType(
       commonNav.notifications,
     ]
   }
+  // Personal account variants:
+  //   - non-child adults get "Family" (manage their kids).
+  //   - children get "Supervision" (read what their parents see) and
+  //     have "Family" hidden — children can't manage other children.
+  // Both entries slot in just before "My Coupons" so the new item lands in
+  // the same visual location regardless of role.
+  const familyOrSupervision = isChild
+    ? personalNav.supervision
+    : personalNav.family
   return [
     commonNav.homie,
     commonNav.chats,
     personalNav.friends,
     personalNav.communities,
     commonNav.events,
+    familyOrSupervision,
     personalNav.myCoupons,
     commonNav.profile,
     commonNav.notifications,
@@ -263,8 +292,21 @@ const data = {
 const isDevMode = process.env.NEXT_PUBLIC_DEV_MODE === "true"
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+  const activeUser = useActiveUser()
   const { accountType } = useAccountType()
-  const navItems = buildNavForAccountType(accountType)
+  // `getMySupervision` returns null for non-child accounts and the supervision
+  // payload for children. We only need the existence to flip the "Family" ↔
+  // "Supervision" nav slot. Skipped until identity resolves so we don't fire
+  // a query without a viewer.
+  const skipSupervision = activeUser.isDevMode
+    ? !activeUser.devUserId
+    : !activeUser.isLoaded
+  const supervision = useIdentifiedQuery(
+    api.family.getMySupervision,
+    skipSupervision ? "skip" : {},
+  )
+  const isChild = supervision != null
+  const navItems = buildNavForAccountType(accountType, isChild)
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>

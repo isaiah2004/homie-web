@@ -8,7 +8,10 @@
  * @module
  */
 
+import type * as _lib_ageBand from "../_lib/ageBand.js";
 import type * as _lib_authz from "../_lib/authz.js";
+import type * as _lib_childPolicy from "../_lib/childPolicy.js";
+import type * as _lib_familyAuthz from "../_lib/familyAuthz.js";
 import type * as _lib_geo from "../_lib/geo.js";
 import type * as _lib_time from "../_lib/time.js";
 import type * as adMetrics from "../adMetrics.js";
@@ -30,6 +33,7 @@ import type * as communityPolls from "../communityPolls.js";
 import type * as conversationMessages from "../conversationMessages.js";
 import type * as conversations from "../conversations.js";
 import type * as crons from "../crons.js";
+import type * as crossBandRequests from "../crossBandRequests.js";
 import type * as devSeed from "../devSeed.js";
 import type * as dm from "../dm.js";
 import type * as dmAgent from "../dmAgent.js";
@@ -37,6 +41,7 @@ import type * as embeddings from "../embeddings.js";
 import type * as embeddingsBackfill from "../embeddingsBackfill.js";
 import type * as eventInvites from "../eventInvites.js";
 import type * as events from "../events.js";
+import type * as family from "../family.js";
 import type * as friends from "../friends.js";
 import type * as groupChatAgent from "../groupChatAgent.js";
 import type * as groupChatMessages from "../groupChatMessages.js";
@@ -59,6 +64,7 @@ import type * as spotify from "../spotify.js";
 import type * as spotifyFeed from "../spotifyFeed.js";
 import type * as spotifyOAuth from "../spotifyOAuth.js";
 import type * as spotifySync from "../spotifySync.js";
+import type * as spouse from "../spouse.js";
 import type * as tvmaze from "../tvmaze.js";
 import type * as users from "../users.js";
 import type * as vapiCalls from "../vapiCalls.js";
@@ -71,7 +77,10 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  "_lib/ageBand": typeof _lib_ageBand;
   "_lib/authz": typeof _lib_authz;
+  "_lib/childPolicy": typeof _lib_childPolicy;
+  "_lib/familyAuthz": typeof _lib_familyAuthz;
   "_lib/geo": typeof _lib_geo;
   "_lib/time": typeof _lib_time;
   adMetrics: typeof adMetrics;
@@ -93,6 +102,7 @@ declare const fullApi: ApiFromModules<{
   conversationMessages: typeof conversationMessages;
   conversations: typeof conversations;
   crons: typeof crons;
+  crossBandRequests: typeof crossBandRequests;
   devSeed: typeof devSeed;
   dm: typeof dm;
   dmAgent: typeof dmAgent;
@@ -100,6 +110,7 @@ declare const fullApi: ApiFromModules<{
   embeddingsBackfill: typeof embeddingsBackfill;
   eventInvites: typeof eventInvites;
   events: typeof events;
+  family: typeof family;
   friends: typeof friends;
   groupChatAgent: typeof groupChatAgent;
   groupChatMessages: typeof groupChatMessages;
@@ -122,6 +133,7 @@ declare const fullApi: ApiFromModules<{
   spotifyFeed: typeof spotifyFeed;
   spotifyOAuth: typeof spotifyOAuth;
   spotifySync: typeof spotifySync;
+  spouse: typeof spouse;
   tvmaze: typeof tvmaze;
   users: typeof users;
   vapiCalls: typeof vapiCalls;

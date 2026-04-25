@@ -7,6 +7,11 @@ import {
 } from "./_generated/server";
 import { v } from "convex/values";
 import { Doc, Id } from "./_generated/dataModel";
+import { getChildPolicy } from "./_lib/childPolicy";
+import {
+  ensurePendingRequest,
+  hasApprovedRequest,
+} from "./crossBandRequests";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers — not exported as Convex functions.
@@ -471,6 +476,30 @@ export const acceptFriendRequest = mutation({
     if (mine.requestedBy === userId) {
       throw new Error("Cannot accept your own outgoing request");
     }
+
+    // Child accepter with `friendApprovalRequired` must route through the
+    // cross-band approval queue. We DO NOT patch the edges here — when the
+    // guardian later approves the request, the resolveApproval mutation
+    // promotes both edges to "accepted" (see crossBandRequests.ts).
+    const accepterPolicy = await getChildPolicy(ctx, userId);
+    if (accepterPolicy?.flags.friendApprovalRequired) {
+      const approved = await hasApprovedRequest(
+        ctx,
+        userId,
+        friendId,
+        "friend",
+      );
+      if (!approved) {
+        await ensurePendingRequest(ctx, {
+          childId: userId,
+          otherId: friendId,
+          scope: "friend",
+          reason: "Friend acceptance",
+        });
+        return { queued: true };
+      }
+    }
+
     await ctx.db.patch(mine._id, { status: "accepted" });
     await ctx.db.patch(theirs._id, { status: "accepted" });
   },

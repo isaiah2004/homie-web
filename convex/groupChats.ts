@@ -6,8 +6,15 @@ import {
   QueryCtx,
   MutationCtx,
 } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
 import { resolveIdentity } from "./lib/identity";
+import { getChildPolicy } from "./_lib/childPolicy";
+import {
+  computeAge,
+  isBimodalAgeDistribution,
+  maxGapYears,
+} from "./_lib/ageBand";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Constants / helpers
@@ -85,6 +92,97 @@ async function requireAdmin(
   return me;
 }
 
+// Returns true iff `parentId` has an active familyLinks edge to `childId`.
+async function isParentOfChild(
+  ctx: QueryCtx | MutationCtx,
+  parentId: Id<"users">,
+  childId: Id<"users">,
+): Promise<boolean> {
+  const link = await ctx.db
+    .query("familyLinks")
+    .withIndex("by_pair", (q) =>
+      q.eq("parentUserId", parentId).eq("childUserId", childId),
+    )
+    .unique();
+  return Boolean(link && link.status === "active");
+}
+
+// Group-chat age-policy enforcement called from createGroupChat and
+// addMember. Two rules:
+//   1. If max gap > 4 years AND no member is the parent of any other
+//      member, reject — large age spreads must include a guardian.
+//   2. If the age distribution is bimodal (per `isBimodalAgeDistribution`),
+//      let the chat continue but flag every child involved by notifying
+//      their guardians and writing an audit row. The flag is informative,
+//      not a block.
+// Members with unparseable / missing DOB are treated as "no constraint"
+// and skipped for age math.
+async function enforceGroupAgePolicy(
+  ctx: MutationCtx,
+  groupId: Id<"groupChats">,
+  allMemberUserIds: Id<"users">[],
+): Promise<void> {
+  const now = Date.now();
+  // Dedupe in case the caller passed overlapping ids.
+  const uniqueIds = Array.from(new Set(allMemberUserIds));
+  const users = await Promise.all(uniqueIds.map((id) => ctx.db.get(id)));
+  const ages: number[] = [];
+  for (const u of users) {
+    if (!u) continue;
+    const age = computeAge(u.dob ?? "", now);
+    if (!Number.isNaN(age)) ages.push(age);
+  }
+
+  if (ages.length >= 2 && maxGapYears(ages) > 4) {
+    // Require at least one parent-of-another-member among the roster.
+    let hasParentMember = false;
+    outer: for (const a of uniqueIds) {
+      for (const b of uniqueIds) {
+        if (a === b) continue;
+        if (await isParentOfChild(ctx, a, b)) {
+          hasParentMember = true;
+          break outer;
+        }
+      }
+    }
+    if (!hasParentMember) {
+      throw new Error(
+        "Group chats with more than 4 years between members must include a parent",
+      );
+    }
+  }
+
+  if (isBimodalAgeDistribution(ages)) {
+    // Find every child member; fire a notification to their guardians
+    // and write an audit row. Failures to enqueue are non-fatal — the
+    // GC must continue to function.
+    for (const id of uniqueIds) {
+      const policy = await getChildPolicy(ctx, id, now);
+      if (!policy) continue;
+      for (const parent of policy.parents) {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.notifications.createNotification,
+          {
+            userId: parent.userId,
+            type: "groupchat_age_distribution_flagged",
+            title: "Group chat flagged for unusual age mix",
+            body: undefined,
+            link: `/dashboard/family/${id}/audit`,
+            meta: { groupChatId: groupId, childId: id },
+          },
+        );
+      }
+      await ctx.scheduler.runAfter(0, internal.family.internalLogAudit, {
+        childUserId: id,
+        actorUserId: id,
+        action: "groupchat_flagged_distribution",
+        meta: { groupChatId: groupId },
+      });
+    }
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Mutations
 // ─────────────────────────────────────────────────────────────────────────────
@@ -113,8 +211,8 @@ export const createGroupChat = mutation({
       new Set(args.memberIds.filter((id) => id !== creatorId)),
     );
 
-    if (uniqueMembers.length === 0) {
-      throw new Error("A group needs at least one other member");
+    if (uniqueMembers.length < 2) {
+      throw new Error("A group needs at least 3 members");
     }
     if (uniqueMembers.length + 1 > MAX_MEMBERS) {
       throw new Error(`Groups can have at most ${MAX_MEMBERS} members`);
@@ -159,6 +257,11 @@ export const createGroupChat = mutation({
         addedBy: creatorId,
       });
     }
+
+    await enforceGroupAgePolicy(ctx, groupChatId, [
+      creatorId,
+      ...uniqueMembers,
+    ]);
 
     return groupChatId;
   },
@@ -284,6 +387,13 @@ export const addMember = mutation({
         `Cannot add ${target.name}: they must be your accepted friend`,
       );
     }
+
+    const currentMembers = await listMembers(ctx, args.groupChatId);
+    const currentMemberIds = currentMembers.map((m) => m.userId);
+    await enforceGroupAgePolicy(ctx, args.groupChatId, [
+      ...currentMemberIds,
+      args.newUserId,
+    ]);
 
     await ctx.db.insert("groupChatMembers", {
       groupChatId: args.groupChatId,

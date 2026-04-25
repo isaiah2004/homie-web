@@ -7,7 +7,7 @@ import { useMutation, useQuery } from "convex/react"
 import { toast } from "sonner"
 import {
   ArrowLeftIcon, BriefcaseIcon, FolderGit2Icon, ImageIcon, MapPinIcon,
-  MessageCircleIcon, SparklesIcon,
+  MessageCircleIcon, ShieldCheckIcon, SparklesIcon,
 } from "lucide-react"
 
 import { api } from "@/convex/_generated/api"
@@ -111,7 +111,20 @@ export default function Page() {
               {initials(u.name)}
             </div>
             <div>
-              <h2 className="text-2xl font-semibold">{u.name}</h2>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <h2 className="text-2xl font-semibold">{u.name}</h2>
+                {/* Lightweight indicator that this account is supervised by a
+                    guardian. Intentionally exposes only the fact of
+                    supervision — never the guardian names — so the child's
+                    family setup isn't broadcast to other users. The flag
+                    lives on the users row, populated by family.createChildAccount. */}
+                {Boolean(("isChild" in u && u.isChild)) && (
+                  <Badge variant="outline" className="gap-1">
+                    <ShieldCheckIcon className="size-3" />
+                    Supervised
+                  </Badge>
+                )}
+              </div>
               {u.username && <p className="text-sm text-muted-foreground">@{u.username}</p>}
               {u.location && (
                 <div className="mt-1 flex items-center justify-center gap-1 text-sm text-muted-foreground">

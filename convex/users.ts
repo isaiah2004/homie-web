@@ -167,6 +167,10 @@ export const getUserForViewer = query({
       location: target.location,
       visibility: target.visibility,
       currentStatus: target.currentStatus,
+      // Surface the supervised-account flag so the profile page can render
+      // a "Supervised" badge next to the name. This is a metadata-only
+      // signal — guardian identities are NEVER exposed here.
+      isChild: target.isChild ?? false,
       interests,
       eventInterests,
       media,

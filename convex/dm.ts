@@ -9,6 +9,9 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Doc, Id } from "./_generated/dataModel";
+import { getChildPolicy, isInNightLock } from "./_lib/childPolicy";
+import { computeAge, withinAllowedBand } from "./_lib/ageBand";
+import { ensurePendingRequest, hasApprovedRequest } from "./crossBandRequests";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -44,6 +47,140 @@ async function requireFriendship(
     .unique();
   if (!edge || edge.status !== "accepted") {
     throw new Error("You must be accepted friends to chat");
+  }
+}
+
+// Returns true iff `parentId` is an active guardian of `childId` per
+// familyLinks. Used by the adults-cannot-DM-minors gate so a parent is
+// always allowed to message their own child even though one side is a
+// minor.
+async function isActiveGuardianOf(
+  ctx: QueryCtx | MutationCtx,
+  parentId: Id<"users">,
+  childId: Id<"users">,
+): Promise<boolean> {
+  const link = await ctx.db
+    .query("familyLinks")
+    .withIndex("by_pair", (q) =>
+      q.eq("parentUserId", parentId).eq("childUserId", childId),
+    )
+    .unique();
+  return Boolean(link && link.status === "active");
+}
+
+// Single-stop child-policy enforcement for DM sends. Order matters:
+//   1. Locked accounts can't transmit at all.
+//   2. Adults ↔ minors are blocked unless the adult is a guardian.
+//   3. Cross-band age pairs need an approved cross-band request.
+//   4. Parent-side blocklists override otherwise-allowed sends.
+//   5. Night-lock window restricts to close-tier friends and audits the
+//      exemption.
+// Each branch falls through cleanly when neither side is a child so adult
+// DMs are unaffected.
+async function enforceDmPolicy(
+  ctx: MutationCtx,
+  fromId: Id<"users">,
+  toId: Id<"users">,
+): Promise<void> {
+  const now = Date.now();
+  const [fromUser, toUser] = await Promise.all([
+    ctx.db.get(fromId),
+    ctx.db.get(toId),
+  ]);
+  if (!fromUser || !toUser) throw new Error("User not found");
+  const [fromPolicy, toPolicy] = await Promise.all([
+    getChildPolicy(ctx, fromId, now),
+    getChildPolicy(ctx, toId, now),
+  ]);
+
+  // 1. Locked accounts.
+  if (fromPolicy?.flags.accountLocked || toPolicy?.flags.accountLocked) {
+    throw new Error("Account is locked");
+  }
+
+  // 2. Adults cannot DM minors directly. A user is a "minor" here iff they
+  // have an active child-account policy (which is the canonical signal —
+  // raw DOB alone doesn't make someone supervised). The adult side is
+  // exempted only if they're an active guardian of the child via
+  // familyLinks.
+  const fromIsChild = fromPolicy !== null;
+  const toIsChild = toPolicy !== null;
+  if (fromIsChild !== toIsChild) {
+    const childId = fromIsChild ? fromId : toId;
+    const adultId = fromIsChild ? toId : fromId;
+    const adultIsGuardian = await isActiveGuardianOf(ctx, adultId, childId);
+    if (!adultIsGuardian) {
+      throw new Error("Adults cannot DM minors directly");
+    }
+  }
+
+  // 3. Age-band check. Uses raw DOBs so two adults with mismatched ages
+  // remain unconstrained (computeAge → NaN collapses withinAllowedBand to
+  // true). Only triggers when both sides have parseable DOBs and the pair
+  // crosses the under-12 line OR (both 12+ and gap > 3yr).
+  const fromAge = computeAge(fromUser.dob ?? "", now);
+  const toAge = computeAge(toUser.dob ?? "", now);
+  if (
+    !Number.isNaN(fromAge) &&
+    !Number.isNaN(toAge) &&
+    !withinAllowedBand(fromAge, toAge)
+  ) {
+    // Only meaningful for child accounts — adults don't have a guardian
+    // to approve. Use whichever side is the child.
+    const childForReq = fromIsChild ? fromId : toIsChild ? toId : null;
+    const otherForReq = fromIsChild ? toId : toIsChild ? fromId : null;
+    if (childForReq && otherForReq) {
+      const approved = await hasApprovedRequest(
+        ctx,
+        childForReq,
+        otherForReq,
+        "dm",
+      );
+      if (!approved) {
+        await ensurePendingRequest(ctx, {
+          childId: childForReq,
+          otherId: otherForReq,
+          scope: "dm",
+          reason: "DM outside allowed age band",
+        });
+        throw new Error(
+          "Outside allowed age range — request sent for parent approval",
+        );
+      }
+    }
+  }
+
+  // 4. Parent-side blocklists. Either side's guardian may have blocked the
+  // other party out-of-band.
+  if (fromPolicy && fromPolicy.blockedUserIds.has(toId as unknown as string)) {
+    throw new Error("This contact is blocked by a guardian");
+  }
+  if (toPolicy && toPolicy.blockedUserIds.has(fromId as unknown as string)) {
+    throw new Error("This contact is blocked by a guardian");
+  }
+
+  // 5. Night lock — only the sender's window matters (the recipient might
+  // be in a different timezone / different family). Within the window the
+  // sender may still DM close-tier friends (server-checks the sender's own
+  // edge so the child can't bypass by re-tagging). Successful close-tier
+  // sends inside the window are audited.
+  if (fromPolicy && isInNightLock(fromPolicy, now)) {
+    const senderEdge = await ctx.db
+      .query("friends")
+      .withIndex("by_user_and_friend", (q) =>
+        q.eq("userId", fromId).eq("friendId", toId),
+      )
+      .unique();
+    const isClose = senderEdge?.tier === "close";
+    if (!isClose) {
+      throw new Error("Outside chat hours");
+    }
+    await ctx.scheduler.runAfter(0, internal.family.internalLogAudit, {
+      childUserId: fromId,
+      actorUserId: fromId,
+      action: "dm_in_night_window",
+      meta: { otherUserId: toId, count: 1 },
+    });
   }
 }
 
@@ -302,6 +439,7 @@ export const sendMessage = mutation({
     { from, to, content, format, attachmentIds, plainText },
   ) => {
     await requireFriendship(ctx, from, to);
+    await enforceDmPolicy(ctx, from, to);
 
     // Normalize content. Server-side DOMPurify sanitize is NOT run here —
     // isomorphic-dompurify fails to init inside the Convex V8 isolate

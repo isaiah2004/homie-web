@@ -14,6 +14,11 @@ import {
   requireCommunityRole,
   type CommunityRole,
 } from "./_lib/authz"
+import { getChildPolicy } from "./_lib/childPolicy"
+import {
+  ensurePendingRequest,
+  hasApprovedCommunityRequest,
+} from "./crossBandRequests"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -201,6 +206,29 @@ export const acceptJoinRequest = mutation({
     }
 
     const now = Date.now()
+
+    // Child accounts with `communityApprovalRequired` need their guardian
+    // to approve the community before the admin's accept can land them as
+    // a member. Returns `{ queued: true }` and leaves the join request
+    // pending for the admin to retry once the guardian approves.
+    const joinerPolicy = await getChildPolicy(ctx, request.userId)
+    if (joinerPolicy?.flags.communityApprovalRequired) {
+      const approved = await hasApprovedCommunityRequest(
+        ctx,
+        request.userId,
+        request.communityId,
+      )
+      if (!approved) {
+        await ensurePendingRequest(ctx, {
+          childId: request.userId,
+          otherId: request.userId,
+          scope: "community",
+          communityId: request.communityId,
+          reason: "Community membership",
+        })
+        return { queued: true }
+      }
+    }
 
     // Dedupe: if the target somehow is already a member we still mark
     // the request accepted without a second insert.

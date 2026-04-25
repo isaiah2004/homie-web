@@ -152,12 +152,19 @@ export const users = defineTable({
     mapsLink: v.optional(v.string()),
     visibility: v.union(v.literal("close"), v.literal("none")),
   })),
-  
+
   school: v.optional(v.object({
     name: v.optional(v.string()),
     mapsLink: v.optional(v.string()),
     visibility: v.union(v.literal("close"), v.literal("none")),
   })),
+
+  // True for accounts created via `family.createChildAccount` — i.e. accounts
+  // that exist under at least one primary parent in `familyLinks`. Optional
+  // because every legacy row predates this feature; readers MUST treat
+  // absent === false. Used by adult-only flows (ad-targeting, business
+  // invites, voice gates) to short-circuit before any policy work.
+  isChild: v.optional(v.boolean()),
 })
   .index("email", ["email"])
   .index("by_username", ["username"]);
@@ -518,6 +525,16 @@ export const notifications = defineTable({
     v.literal("business_role_changed"),
     v.literal("ad_approved"),
     v.literal("ad_rejected"),
+    // Family / parent-controlled child accounts. See convex/family.ts.
+    v.literal("parent_invite"),
+    v.literal("parent_invite_accepted"),
+    v.literal("spouse_invite"),
+    v.literal("spouse_invite_accepted"),
+    v.literal("parent_approval_needed"),
+    v.literal("parent_approval_granted"),
+    v.literal("parent_approval_denied"),
+    v.literal("child_settings_changed"),
+    v.literal("groupchat_age_distribution_flagged"),
   ),
   title: v.string(),
   body: v.optional(v.string()),
@@ -1137,6 +1154,178 @@ export const savedCoupons = defineTable({
   .index("by_user", ["userId"])
   .index("by_user_and_ad", ["userId", "adId"]);
 
+// ============================================================================
+// Family / parent-controlled child accounts
+// ============================================================================
+//
+// The five tables below implement a privacy-preserving Family Center pattern
+// (modelled on Instagram Teen Accounts / Discord Family Center). The keystone
+// is `convex/_lib/childPolicy.ts:getChildPolicy(userId)` — the single function
+// every gate consults. Adding a new control = one optional flag here + one
+// branch in the policy resolver + one consumer.
+
+// Parent-child edge. One row per (parent, child) pair.
+//
+// Each child has exactly one row with `parentRole === "primary"` (created by
+// `family.createChildAccount`). Subsequent guardians get co_parent (full
+// settings access) or step_parent (read-only metadata + calendar).
+//
+// `status` lifecycle: pending (only used for invites — primary's own row is
+// always active) -> active -> revoked. Revoked rows are kept for the audit
+// log; queries filter by status.
+const parentRoleEnum = v.union(
+  v.literal("primary"),
+  v.literal("co_parent"),
+  v.literal("step_parent"),
+);
+
+export const familyLinks = defineTable({
+  parentUserId: v.id("users"),
+  childUserId: v.id("users"),
+  parentRole: parentRoleEnum,
+  status: v.union(
+    v.literal("pending"),
+    v.literal("active"),
+    v.literal("revoked"),
+  ),
+  invitedBy: v.optional(v.id("users")),
+  createdAt: v.number(),
+  acceptedAt: v.optional(v.number()),
+  revokedAt: v.optional(v.number()),
+})
+  .index("by_parent_and_status", ["parentUserId", "status"])
+  .index("by_child_and_status", ["childUserId", "status"])
+  .index("by_pair", ["parentUserId", "childUserId"]);
+
+// Adult-adult spouse edge. Canonical pair (userAId < userBId lexicographically)
+// — there is at most one row per pair. Calendar sharing is per-direction so
+// each spouse independently controls whether the other can see their Homie
+// events. A spouse link does NOT automatically grant any parent rights — the
+// primary parent must explicitly invite the spouse via `family.inviteCoParent`
+// to grant co_parent or step_parent role.
+export const spouseLinks = defineTable({
+  userAId: v.id("users"),
+  userBId: v.id("users"),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("active"),
+    v.literal("revoked"),
+  ),
+  invitedBy: v.id("users"),
+  aSharesCalendar: v.boolean(),
+  bSharesCalendar: v.boolean(),
+  createdAt: v.number(),
+  acceptedAt: v.optional(v.number()),
+  revokedAt: v.optional(v.number()),
+})
+  .index("by_pair", ["userAId", "userBId"])
+  .index("by_userA_and_status", ["userAId", "status"])
+  .index("by_userB_and_status", ["userBId", "status"]);
+
+// Per-child policy bag. One row per child, created by `createChildAccount`.
+//
+// `flags` is intentionally a flat optional-boolean object — adding a new
+// control means adding one optional field here and one branch in the policy
+// resolver. Absent flags fall back to age-band defaults centralized in
+// `convex/_lib/childPolicy.ts`. This is the modularity story: never edit
+// existing gates to add a control, only the resolver and one consumer.
+//
+// `nightLockWindow` is interpreted in `childTimezone` (an IANA TZ string set
+// by the parent). During the window, only `friends.tier === "close"` peers
+// can DM the child; all night-window activity is logged to `familyAuditLog`.
+//
+// `blockedUserIds` / `blockedCommunityIds` are parent overrides that take
+// precedence over the child's own contacts.
+export const childSettings = defineTable({
+  childUserId: v.id("users"),
+  ageBand: v.union(v.literal("under_12"), v.literal("12_plus")),
+  childTimezone: v.optional(v.string()),
+  flags: v.object({
+    // C — friend & community gates
+    friendApprovalRequired: v.optional(v.boolean()),
+    communityApprovalRequired: v.optional(v.boolean()),
+    blockNonFriendDms: v.optional(v.boolean()),
+    discoverabilityRestricted: v.optional(v.boolean()),
+    // D — content
+    contentFilterPg13: v.optional(v.boolean()),
+    voiceChatAllowed: v.optional(v.boolean()),
+    agentDisabled: v.optional(v.boolean()),
+    agentRestricted: v.optional(v.boolean()),
+    // E — night lock
+    nightLockEnabled: v.optional(v.boolean()),
+    // F — metadata visibility (per-bucket parent toggles)
+    parentSeesFriends: v.optional(v.boolean()),
+    parentSeesDmPartners: v.optional(v.boolean()),
+    parentSeesCommunities: v.optional(v.boolean()),
+    parentSeesActivity: v.optional(v.boolean()),
+    parentSeesProfile: v.optional(v.boolean()),
+    // Calendar
+    calendarVisibleToParents: v.optional(v.boolean()),
+    // J — recovery
+    unlinkAt18: v.optional(v.boolean()),
+    accountLocked: v.optional(v.boolean()),
+  }),
+  nightLockWindow: v.optional(
+    v.object({
+      start: v.string(), // "HH:MM"
+      end: v.string(),
+    }),
+  ),
+  blockedUserIds: v.optional(v.array(v.id("users"))),
+  blockedCommunityIds: v.optional(v.array(v.id("communities"))),
+  updatedAt: v.number(),
+}).index("by_child", ["childUserId"]);
+
+// Cross-band approval requests. The single approval table for ALL parent-
+// gated child actions: DMs across the age band, friend acceptances, community
+// joins, and group-chat additions. `scope` discriminates which gate looks at
+// it.
+//
+// Idempotency: a pending row for the same (child, other, scope) is reused;
+// approved / denied rows do NOT block re-requesting. Enforced in mutations.
+export const crossBandRequests = defineTable({
+  childUserId: v.id("users"),
+  otherUserId: v.id("users"),
+  scope: v.union(
+    v.literal("dm"),
+    v.literal("groupchat"),
+    v.literal("friend"),
+    v.literal("community"),
+  ),
+  communityId: v.optional(v.id("communities")),
+  groupChatId: v.optional(v.id("groupChats")),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("approved"),
+    v.literal("denied"),
+    v.literal("revoked"),
+  ),
+  reason: v.optional(v.string()),
+  approvedBy: v.optional(v.id("users")),
+  createdAt: v.number(),
+  respondedAt: v.optional(v.number()),
+})
+  .index("by_child_and_status", ["childUserId", "status"])
+  .index("by_pair_and_scope", ["childUserId", "otherUserId", "scope"]);
+
+// Audit log of every parent action and every metadata view. Read by
+// `/dashboard/profile/supervision` so the child can see exactly what the
+// parent has done. This is the transparency leg of the design — without it
+// the system reduces to surveillance.
+//
+// `action` is a free-text key by convention (e.g. "viewed_friends",
+// "set_flag.nightLockEnabled", "approved_cross_band_request"). Schema does
+// NOT enforce a union to keep the audit log open-ended without churn.
+export const familyAuditLog = defineTable({
+  childUserId: v.id("users"),
+  actorUserId: v.id("users"),
+  action: v.string(),
+  meta: v.optional(v.record(v.string(), v.any())),
+  createdAt: v.number(),
+})
+  .index("by_child_and_created", ["childUserId", "createdAt"])
+  .index("by_actor_and_created", ["actorUserId", "createdAt"]);
+
 export default defineSchema({
   users,
   friends,
@@ -1177,4 +1366,9 @@ export default defineSchema({
   adMetrics,
   communityAdPlacements,
   savedCoupons,
+  familyLinks,
+  spouseLinks,
+  childSettings,
+  crossBandRequests,
+  familyAuditLog,
 });
