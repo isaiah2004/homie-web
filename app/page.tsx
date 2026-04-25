@@ -124,15 +124,10 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      {/* hero */}
-      <section className="relative flex min-h-[88vh] items-center justify-center px-6">
-        {/* social lattice as hero backdrop */}
-        <div className="pointer-events-none absolute inset-0 z-0 opacity-80">
-          <SocialLattice mode="stable" />
-        </div>
-
-        {/* hero copy */}
-        <div className="relative z-10 flex max-w-5xl flex-col items-center gap-8 text-center">
+      {/* hero — text on left, lattice on right */}
+      <section className="relative mx-auto grid w-full max-w-7xl items-center gap-8 px-6 py-16 md:min-h-[88vh] md:grid-cols-[1.1fr_1fr] md:gap-12 md:px-12 md:py-0">
+        {/* hero copy (left) */}
+        <div className="flex flex-col gap-6 text-left">
           <div
             className="font-mono text-[11px] tracking-[0.4em] uppercase"
             style={{ color: P.muted, animation: "fade-up 0.8s 0.1s both" }}
@@ -142,7 +137,7 @@ export default function LandingPage() {
           <h1
             style={{
               fontFamily: SERIF,
-              fontSize: "clamp(140px, 22vw, 280px)",
+              fontSize: "clamp(96px, 16vw, 220px)",
               lineHeight: 0.85,
               letterSpacing: "-0.04em",
               color: P.text,
@@ -152,7 +147,7 @@ export default function LandingPage() {
             homie<span style={{ color: P.primary }}>.</span>
           </h1>
           <div
-            className="max-w-2xl text-lg sm:text-xl md:text-2xl"
+            className="max-w-xl text-lg sm:text-xl md:text-2xl"
             style={{
               color: P.text,
               opacity: 0.85,
@@ -163,7 +158,7 @@ export default function LandingPage() {
             <span style={{ color: P.secondary }}>already have.</span>
           </div>
           <div
-            className="max-w-xl text-sm sm:text-base"
+            className="max-w-md text-sm sm:text-base"
             style={{
               color: P.muted,
               animation: "fade-up 0.8s 1.6s both",
@@ -173,7 +168,7 @@ export default function LandingPage() {
             films, books and games you actually love.
           </div>
           <div
-            className="mt-4 flex flex-wrap items-center justify-center gap-3"
+            className="mt-2 flex flex-wrap items-center gap-3"
             style={{ animation: "fade-up 0.8s 2s both" }}
           >
             {isDevMode ? (
@@ -220,7 +215,7 @@ export default function LandingPage() {
             </Link>
           </div>
           <div
-            className="mt-6 text-[11px]"
+            className="mt-2 text-[11px]"
             style={{
               color: P.muted,
               animation: "fade-up 0.8s 2.5s both",
@@ -235,6 +230,14 @@ export default function LandingPage() {
             </kbd>{" "}
             to scroll
           </div>
+        </div>
+
+        {/* lattice (right) */}
+        <div
+          className="relative h-[420px] w-full md:h-[600px]"
+          style={{ animation: "fade-up 1.2s 0.4s both" }}
+        >
+          <SocialLattice mode="stable" />
         </div>
       </section>
 
