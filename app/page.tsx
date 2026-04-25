@@ -3,21 +3,28 @@
 import Link from "next/link"
 import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs"
 
-import { Background } from "./ppt/_components/Background"
-import { Reveal, RevealWords } from "./ppt/_components/Reveal"
-import { BondNetwork } from "./_components/BondNetwork"
+import { SocialLattice } from "./ppt/page"
 
-const HERO_PALETTE: [string, string, string] = ["#7c3aed", "#ec4899", "#f59e0b"]
+const P = {
+  bg: "#F4EADB",
+  elevated: "#FFFFFF",
+  primary: "#C8501F",
+  secondary: "#8B5E3C",
+  text: "#2B1D10",
+  muted: "#93826E",
+  success: "#4A7043",
+} as const
+
+const SERIF = "'Instrument Serif', 'Times New Roman', Georgia, serif"
+
 const isDevMode = process.env.NEXT_PUBLIC_DEV_MODE === "true"
 
-// In dev mode there is no ClerkProvider (see <AuthProviders>), so we must
-// avoid Clerk hooks/components on this page. Render a stand-in nav + CTAs
-// that link straight into the dashboard instead.
 function DevNavAuth() {
   return (
     <Link
       href="/dashboard"
-      className="cursor-pointer rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-white/90"
+      className="rounded-full px-4 py-2 text-sm font-medium transition"
+      style={{ backgroundColor: P.primary, color: P.bg }}
     >
       open dashboard
     </Link>
@@ -28,7 +35,8 @@ function DevHeroCta() {
   return (
     <Link
       href="/dashboard"
-      className="group cursor-pointer rounded-full bg-white px-6 py-3 text-sm font-medium text-black transition hover:bg-white/90"
+      className="group rounded-full px-6 py-3 text-sm font-medium transition"
+      style={{ backgroundColor: P.primary, color: P.bg }}
     >
       open your dashboard
       <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
@@ -42,7 +50,8 @@ function DevBottomCta() {
   return (
     <Link
       href="/dashboard"
-      className="group cursor-pointer rounded-full bg-white px-7 py-3.5 text-base font-medium text-black transition hover:bg-white/90"
+      className="group rounded-full px-7 py-3.5 text-base font-medium transition"
+      style={{ backgroundColor: P.primary, color: P.bg }}
     >
       continue to dashboard
       <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
@@ -54,20 +63,34 @@ function DevBottomCta() {
 
 export default function LandingPage() {
   return (
-    <main className="relative min-h-screen overflow-x-hidden bg-[#0a0910] text-white">
-      {/* grainy moving gradients */}
-      <Background palette={HERO_PALETTE} />
+    <main
+      className="relative min-h-screen overflow-x-hidden"
+      style={{ backgroundColor: P.bg, color: P.text }}
+    >
+      <Grain />
+      <AmbientGlows />
 
       {/* top nav */}
       <nav className="relative z-30 flex items-center justify-between px-6 py-6 sm:px-12">
-        <div className="flex items-center gap-2 font-mono text-[11px] tracking-[0.3em] text-white/60 uppercase">
-          <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-white" />
+        <div
+          className="flex items-center gap-2 font-mono text-[11px] tracking-[0.3em] uppercase"
+          style={{ color: P.muted }}
+        >
+          <span
+            className="inline-block h-2 w-2 animate-pulse rounded-full"
+            style={{ backgroundColor: P.primary }}
+          />
           homie
         </div>
         <div className="flex items-center gap-3 text-sm">
           <Link
             href="/ppt"
-            className="hidden rounded-full border border-white/10 bg-white/5 px-4 py-2 font-mono text-[11px] tracking-[0.2em] text-white/70 uppercase backdrop-blur transition hover:border-white/30 hover:bg-white/10 sm:inline-block"
+            className="hidden rounded-full border px-4 py-2 font-mono text-[11px] tracking-[0.2em] uppercase transition sm:inline-block"
+            style={{
+              borderColor: `${P.muted}55`,
+              color: P.text,
+              backgroundColor: `${P.elevated}cc`,
+            }}
           >
             the pitch
           </Link>
@@ -77,12 +100,18 @@ export default function LandingPage() {
             <>
               <Show when="signed-out">
                 <SignInButton>
-                  <button className="cursor-pointer rounded-full px-3 py-2 text-sm text-white/75 transition hover:text-white">
+                  <button
+                    className="rounded-full px-3 py-2 text-sm transition"
+                    style={{ color: P.text }}
+                  >
                     sign in
                   </button>
                 </SignInButton>
                 <SignUpButton>
-                  <button className="cursor-pointer rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-white/90">
+                  <button
+                    className="rounded-full px-4 py-2 text-sm font-medium transition"
+                    style={{ backgroundColor: P.primary, color: P.bg }}
+                  >
                     sign up
                   </button>
                 </SignUpButton>
@@ -97,51 +126,66 @@ export default function LandingPage() {
 
       {/* hero */}
       <section className="relative flex min-h-[88vh] items-center justify-center px-6">
-        {/* breathing bond network behind copy */}
+        {/* social lattice as hero backdrop */}
         <div className="pointer-events-none absolute inset-0 z-0 opacity-80">
-          <BondNetwork />
+          <SocialLattice mode="stable" />
         </div>
 
         {/* hero copy */}
         <div className="relative z-10 flex max-w-5xl flex-col items-center gap-8 text-center">
-          <Reveal
-            delay={0.1}
-            className="font-mono text-[11px] tracking-[0.4em] text-white/60 uppercase"
+          <div
+            className="font-mono text-[11px] tracking-[0.4em] uppercase"
+            style={{ color: P.muted, animation: "fade-up 0.8s 0.1s both" }}
           >
             the people you know — known better
-          </Reveal>
-          <h1 className="text-[min(22vw,220px)] leading-[0.85] font-black tracking-[-0.04em]">
-            <RevealWords text="homie." delay={0.25} stagger={0.1} />
+          </div>
+          <h1
+            style={{
+              fontFamily: SERIF,
+              fontSize: "clamp(140px, 22vw, 280px)",
+              lineHeight: 0.85,
+              letterSpacing: "-0.04em",
+              color: P.text,
+              animation: "fade-up 1s 0.25s both",
+            }}
+          >
+            homie<span style={{ color: P.primary }}>.</span>
           </h1>
           <div
-            className="pointer-events-none absolute inset-x-0 top-1/2 -z-10 h-[40vh] -translate-y-1/2 blur-3xl"
+            className="max-w-2xl text-lg sm:text-xl md:text-2xl"
             style={{
-              background:
-                "radial-gradient(ellipse at center, rgba(236,72,153,0.28), transparent 60%)",
+              color: P.text,
+              opacity: 0.85,
+              animation: "fade-up 0.8s 0.9s both",
             }}
-          />
-          <div className="max-w-2xl text-lg text-white/80 sm:text-xl md:text-2xl">
-            <RevealWords
-              text="strengthen the bonds you already have."
-              delay={0.9}
-              stagger={0.07}
-            />
+          >
+            strengthen the bonds you{" "}
+            <span style={{ color: P.secondary }}>already have.</span>
           </div>
-          <Reveal
-            delay={1.6}
-            className="max-w-xl text-sm text-white/55 sm:text-base"
+          <div
+            className="max-w-xl text-sm sm:text-base"
+            style={{
+              color: P.muted,
+              animation: "fade-up 0.8s 1.6s both",
+            }}
           >
             a re-bonding layer for the people already in your life — built on the music,
             films, books and games you actually love.
-          </Reveal>
-          <Reveal delay={2.0} className="mt-4 flex flex-wrap items-center justify-center gap-3">
+          </div>
+          <div
+            className="mt-4 flex flex-wrap items-center justify-center gap-3"
+            style={{ animation: "fade-up 0.8s 2s both" }}
+          >
             {isDevMode ? (
               <DevHeroCta />
             ) : (
               <>
                 <Show when="signed-out">
                   <SignUpButton>
-                    <button className="group cursor-pointer rounded-full bg-white px-6 py-3 text-sm font-medium text-black transition hover:bg-white/90">
+                    <button
+                      className="group rounded-full px-6 py-3 text-sm font-medium transition"
+                      style={{ backgroundColor: P.primary, color: P.bg }}
+                    >
                       get your homie
                       <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
                         →
@@ -152,7 +196,8 @@ export default function LandingPage() {
                 <Show when="signed-in">
                   <Link
                     href="/dashboard"
-                    className="group cursor-pointer rounded-full bg-white px-6 py-3 text-sm font-medium text-black transition hover:bg-white/90"
+                    className="group rounded-full px-6 py-3 text-sm font-medium transition"
+                    style={{ backgroundColor: P.primary, color: P.bg }}
                   >
                     open your dashboard
                     <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
@@ -164,58 +209,84 @@ export default function LandingPage() {
             )}
             <Link
               href="/ppt"
-              className="cursor-pointer rounded-full border border-white/15 bg-white/5 px-6 py-3 text-sm text-white/80 backdrop-blur transition hover:border-white/30 hover:bg-white/10"
+              className="rounded-full border px-6 py-3 text-sm transition"
+              style={{
+                borderColor: `${P.muted}55`,
+                color: P.text,
+                backgroundColor: `${P.elevated}cc`,
+              }}
             >
               watch the pitch
             </Link>
-          </Reveal>
-          <Reveal delay={2.5} className="mt-6 text-[11px] text-white/40">
-            press <kbd className="rounded bg-white/10 px-1.5 py-0.5 font-mono">↓</kbd>{" "}
+          </div>
+          <div
+            className="mt-6 text-[11px]"
+            style={{
+              color: P.muted,
+              animation: "fade-up 0.8s 2.5s both",
+            }}
+          >
+            press{" "}
+            <kbd
+              className="rounded px-1.5 py-0.5 font-mono"
+              style={{ backgroundColor: `${P.muted}22` }}
+            >
+              ↓
+            </kbd>{" "}
             to scroll
-          </Reveal>
+          </div>
         </div>
       </section>
 
       {/* idea */}
       <section className="relative z-10 mx-auto max-w-5xl px-6 py-32 sm:py-40">
-        <Reveal className="font-mono text-[11px] tracking-[0.3em] text-white/60 uppercase">
+        <div
+          className="font-mono text-[11px] tracking-[0.3em] uppercase"
+          style={{ color: P.muted }}
+        >
           the idea
-        </Reveal>
-        <h2 className="mt-6 text-4xl leading-[1.05] font-semibold tracking-tight sm:text-6xl md:text-7xl">
-          <RevealWords
-            text="real bonds aren't built on hello."
-            delay={0.1}
-            className="block text-white"
-          />
-          <RevealWords
-            text="they're built on what you both love."
-            delay={0.5}
-            className="block text-amber-200/90"
-          />
+        </div>
+        <h2
+          className="mt-6"
+          style={{
+            fontFamily: SERIF,
+            fontSize: "clamp(40px, 7vw, 96px)",
+            lineHeight: 1.05,
+            letterSpacing: "-0.03em",
+            color: P.text,
+          }}
+        >
+          <span className="block">Real bonds aren&rsquo;t built on hello.</span>
+          <span
+            className="block"
+            style={{ color: P.primary, fontStyle: "italic" }}
+          >
+            They&rsquo;re built on what you both love.
+          </span>
         </h2>
-        <Reveal delay={1.2} className="mt-8 max-w-2xl text-lg text-white/75 sm:text-xl">
+        <p
+          className="mt-8 max-w-2xl text-lg sm:text-xl"
+          style={{ color: P.text, opacity: 0.78 }}
+        >
           The album you both wore out. The book that rewired you. The game you grew up on.
           Homie turns your tastes into a language your friends can read — and quietly
           shows where your worlds overlap.
-        </Reveal>
+        </p>
       </section>
 
       {/* pillars */}
       <section className="relative z-10 mx-auto grid max-w-6xl grid-cols-1 gap-5 px-6 pb-32 sm:grid-cols-3">
         <Pillar
-          delay={0.05}
           kicker="01"
           title="depth over reach"
           body="Optimize for one more meaningful hour with your best friend — not a thousand new followers."
         />
         <Pillar
-          delay={0.2}
           kicker="02"
           title="taste, not metadata"
           body="Your playlist history is a personality. We let the people who matter read it."
         />
         <Pillar
-          delay={0.35}
           kicker="03"
           title="real overlap"
           body="Provider-backed ids — the same Spotify song, the same book isbn — so 'we both love this' is a fact."
@@ -224,13 +295,26 @@ export default function LandingPage() {
 
       {/* how */}
       <section className="relative z-10 mx-auto max-w-6xl px-6 pb-32">
-        <Reveal className="font-mono text-[11px] tracking-[0.3em] text-white/60 uppercase">
+        <div
+          className="font-mono text-[11px] tracking-[0.3em] uppercase"
+          style={{ color: P.muted }}
+        >
           how it clicks
-        </Reveal>
-        <h2 className="mt-6 text-3xl leading-[1.1] font-semibold tracking-tight sm:text-5xl">
-          <RevealWords text="build a profile out of the things you actually love." delay={0.1} />
+        </div>
+        <h2
+          className="mt-6"
+          style={{
+            fontFamily: SERIF,
+            fontSize: "clamp(36px, 5.5vw, 80px)",
+            lineHeight: 1.05,
+            letterSpacing: "-0.03em",
+            color: P.text,
+          }}
+        >
+          Build a profile out of the things you{" "}
+          <span style={{ color: P.primary, fontStyle: "italic" }}>actually love.</span>
         </h2>
-        <Reveal delay={0.9} className="mt-8 flex flex-wrap gap-2">
+        <div className="mt-8 flex flex-wrap gap-2">
           {[
             ["Spotify", "music"],
             ["OMDb", "films"],
@@ -240,38 +324,62 @@ export default function LandingPage() {
           ].map(([name, kind]) => (
             <span
               key={name}
-              className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-4 py-2 text-sm text-white/80 backdrop-blur"
+              className="inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm"
+              style={{
+                borderColor: `${P.muted}44`,
+                color: P.text,
+                backgroundColor: `${P.elevated}cc`,
+              }}
             >
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-gradient-to-br from-pink-400 to-amber-300" />
+              <span
+                className="inline-block h-1.5 w-1.5 rounded-full"
+                style={{ backgroundColor: P.primary }}
+              />
               <span className="font-medium">{name}</span>
-              <span className="text-white/40">·</span>
-              <span className="text-white/55">{kind}</span>
+              <span style={{ color: P.muted }}>·</span>
+              <span style={{ color: P.muted }}>{kind}</span>
             </span>
           ))}
-        </Reveal>
+        </div>
       </section>
 
       {/* closing CTA */}
       <section className="relative z-10 flex flex-col items-center justify-center px-6 py-40 text-center">
-        <Reveal className="font-mono text-[11px] tracking-[0.3em] text-white/60 uppercase">
+        <div
+          className="font-mono text-[11px] tracking-[0.3em] uppercase"
+          style={{ color: P.muted }}
+        >
           bring them home
-        </Reveal>
-        <h2 className="mt-8 text-[min(16vw,160px)] leading-[1.2] font-black tracking-[-0.03em]">
-          <RevealWords text="make friends" delay={0.1} className="block text-white" />
-          <RevealWords
-            text="again."
-            delay={0.55}
-            className="block text-amber-200/90"
-          />
+        </div>
+        <h2
+          className="mt-8"
+          style={{
+            fontFamily: SERIF,
+            fontSize: "clamp(80px, 14vw, 220px)",
+            lineHeight: 0.88,
+            letterSpacing: "-0.03em",
+            color: P.text,
+          }}
+        >
+          <span className="block">Make friends</span>
+          <span
+            className="block"
+            style={{ color: P.primary, fontStyle: "italic" }}
+          >
+            again.
+          </span>
         </h2>
-        <Reveal delay={1.2} className="mt-10 flex flex-wrap items-center justify-center gap-3">
+        <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
           {isDevMode ? (
             <DevBottomCta />
           ) : (
             <>
               <Show when="signed-out">
                 <SignUpButton>
-                  <button className="group cursor-pointer rounded-full bg-white px-7 py-3.5 text-base font-medium text-black transition hover:bg-white/90">
+                  <button
+                    className="group rounded-full px-7 py-3.5 text-base font-medium transition"
+                    style={{ backgroundColor: P.primary, color: P.bg }}
+                  >
                     start your homie
                     <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
                       →
@@ -282,7 +390,8 @@ export default function LandingPage() {
               <Show when="signed-in">
                 <Link
                   href="/dashboard"
-                  className="group cursor-pointer rounded-full bg-white px-7 py-3.5 text-base font-medium text-black transition hover:bg-white/90"
+                  className="group rounded-full px-7 py-3.5 text-base font-medium transition"
+                  style={{ backgroundColor: P.primary, color: P.bg }}
                 >
                   continue to dashboard
                   <span className="ml-2 inline-block transition group-hover:translate-x-0.5">
@@ -292,41 +401,102 @@ export default function LandingPage() {
               </Show>
             </>
           )}
-        </Reveal>
+        </div>
       </section>
 
-      <footer className="relative z-10 flex flex-col items-center justify-between gap-4 border-t border-white/10 px-6 py-10 text-[11px] text-white/40 sm:flex-row sm:px-12">
+      <footer
+        className="relative z-10 flex flex-col items-center justify-between gap-4 border-t px-6 py-10 text-[11px] sm:flex-row sm:px-12"
+        style={{
+          borderColor: `${P.muted}33`,
+          color: P.muted,
+        }}
+      >
         <div className="flex items-center gap-2">
-          <span className="inline-block h-1.5 w-1.5 rounded-full bg-gradient-to-br from-pink-400 to-violet-500" />
+          <span
+            className="inline-block h-1.5 w-1.5 rounded-full"
+            style={{ backgroundColor: P.primary }}
+          />
           <span className="font-mono tracking-[0.3em] uppercase">homie</span>
         </div>
         <div className="font-mono tracking-[0.2em] uppercase">
-          a weekend build that wants to stick around
+          built for the meeting, not the scrolling
         </div>
       </footer>
+
+      <style>{`
+        @keyframes fade-up {
+          from { opacity: 0; transform: translateY(14px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </main>
   )
 }
 
 function Pillar({
-  delay,
   kicker,
   title,
   body,
 }: {
-  delay: number
   kicker: string
   title: string
   body: string
 }) {
   return (
-    <Reveal
-      delay={delay}
-      className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.03] p-6 backdrop-blur-sm"
+    <div
+      className="flex flex-col gap-3 rounded-2xl border p-6"
+      style={{
+        borderColor: `${P.muted}44`,
+        backgroundColor: P.elevated,
+      }}
     >
-      <div className="font-mono text-xs text-white/40">{kicker}</div>
-      <div className="text-xl font-semibold text-white">{title}</div>
-      <div className="text-sm text-white/65">{body}</div>
-    </Reveal>
+      <div
+        className="font-mono text-xs"
+        style={{ color: P.primary }}
+      >
+        {kicker}
+      </div>
+      <div
+        className="text-xl font-semibold"
+        style={{ color: P.text, fontFamily: SERIF }}
+      >
+        {title}
+      </div>
+      <div className="text-sm" style={{ color: P.text, opacity: 0.7 }}>
+        {body}
+      </div>
+    </div>
+  )
+}
+
+function AmbientGlows() {
+  return (
+    <>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -top-40 -right-40 z-0 h-[600px] w-[600px] rounded-full opacity-30 blur-3xl"
+        style={{ background: P.primary }}
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -bottom-48 -left-40 z-0 h-[640px] w-[640px] rounded-full opacity-20 blur-3xl"
+        style={{ background: P.secondary }}
+      />
+    </>
+  )
+}
+
+function Grain() {
+  return (
+    <div
+      aria-hidden
+      className="pointer-events-none fixed inset-0 z-0 mix-blend-multiply"
+      style={{
+        opacity: 0.18,
+        backgroundImage:
+          "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/><feComponentTransfer><feFuncA type='linear' slope='0.9'/></feComponentTransfer></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")",
+        backgroundSize: "200px 200px",
+      }}
+    />
   )
 }

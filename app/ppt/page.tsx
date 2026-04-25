@@ -2578,7 +2578,11 @@ function extraNodeVisibility(
   return 0
 }
 
-function SocialLattice({ mode = "stable" }: { mode?: LatticeMode }) {
+export function SocialLattice({
+  mode = "stable",
+}: {
+  mode?: LatticeMode
+}) {
   const [t, setT] = useState(0)
 
   // transition: smoothly interpolate from previous mode → current mode
