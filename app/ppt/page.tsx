@@ -153,21 +153,80 @@ const CHILD_CARDS: CardData[] = [
   },
 ]
 
+// new deck — Indian + global stats only ----------------------------
+
+const LONELINESS_CARDS: CardData[] = [
+  {
+    big: "27%",
+    small: "of young adults 19–29 are seriously lonely in India",
+    yLabel: "% seriously lonely",
+    yMax: 35,
+    chart: [
+      { year: 2018, value: 18 },
+      { year: 2020, value: 22 },
+      { year: 2023, value: 25 },
+      { year: 2025, value: 27 },
+    ],
+    caption: "Aspen Institute · Discover Mental Health (2025).",
+  },
+  {
+    big: "80%",
+    small: "of Gen Z globally feels socially isolated",
+    yLabel: "% isolated",
+    yMax: 100,
+    chart: [
+      { year: 2015, value: 50 },
+      { year: 2018, value: 60 },
+      { year: 2020, value: 70 },
+      { year: 2022, value: 75 },
+      { year: 2024, value: 80 },
+    ],
+    caption: "The first generation to grow up online is also the loneliest.",
+  },
+]
+
+const KIDS_CARDS: CardData[] = [
+  {
+    big: "8h 39m",
+    small: "daily entertainment screen time for teens 13–18",
+    yLabel: "hours / day",
+    yMax: 10,
+    chart: [
+      { year: 2015, value: 6.0 },
+      { year: 2018, value: 7.0 },
+      { year: 2020, value: 7.75 },
+      { year: 2023, value: 8.4 },
+      { year: 2025, value: 8.65 },
+    ],
+    caption: "Common Sense Media, 2025. Tweens 8–12: 5h 33m.",
+  },
+  {
+    big: "40%",
+    small: "of urban Indians felt MORE isolated despite being online constantly",
+    yLabel: "% feeling more isolated",
+    yMax: 50,
+    chart: [
+      { year: 2018, value: 22 },
+      { year: 2020, value: 32 },
+      { year: 2022, value: 38 },
+      { year: 2024, value: 40 },
+    ],
+    caption: "The connectivity paradox. Big Story Network, 2024.",
+  },
+]
+
 type SlideRender = (props: { subIdx: number }) => React.ReactNode
 
 const SLIDES: { id: string; render: SlideRender; subSteps: number }[] = [
   { id: "cover", render: CoverSlide, subSteps: 0 },
-  { id: "world", render: WorldSlide, subSteps: 3 },
-  { id: "india", render: IndiaSlide, subSteps: 3 },
-  { id: "children", render: ChildrenSlide, subSteps: 3 },
-  { id: "gap", render: GapSlide, subSteps: 0 },
-  { id: "trap", render: TrapSlide, subSteps: 0 },
-  { id: "profits", render: ProfitsSlide, subSteps: 0 },
-  { id: "pivot", render: PivotSlide, subSteps: 0 },
-  { id: "features", render: FeaturesSlide, subSteps: 5 },
-  { id: "graph", render: GraphSlide, subSteps: 1 },
-  { id: "overlap", render: OverlapSlide, subSteps: 0 },
-  { id: "community", render: CommunitySlide, subSteps: 0 },
+  { id: "loneliness", render: LonelinessSlide, subSteps: 2 },
+  { id: "kids", render: KidsSlide, subSteps: 2 },
+  { id: "problems", render: ProblemsSlide, subSteps: 0 },
+  { id: "graph", render: ProblemGraphSlide, subSteps: 4 },
+  { id: "consumer", render: ConsumerFeaturesSlide, subSteps: 0 },
+  { id: "business", render: BusinessFeaturesSlide, subSteps: 0 },
+  { id: "child-protection", render: ChildProtectionSlide, subSteps: 0 },
+  { id: "use-cases", render: UseCasesSlide, subSteps: 4 },
   { id: "demo", render: DemoSlide, subSteps: 0 },
   { id: "close", render: CloseSlide, subSteps: 0 },
 ]
@@ -379,6 +438,63 @@ function ChildrenSlide({ subIdx }: { subIdx: number }) {
       }
       attribution="Common Sense Media · Storyboard18 · CDC YRBS."
       cards={CHILD_CARDS}
+      subIdx={subIdx}
+    />
+  )
+}
+
+// new deck slides ---------------------------------------------------
+
+function LonelinessSlide({ subIdx }: { subIdx: number }) {
+  return (
+    <InteractiveStatsSlide
+      kicker="the quiet epidemic"
+      headline={
+        <>
+          Loneliness is the{" "}
+          <span style={{ color: P.primary, fontStyle: "italic" }}>
+            quietest
+          </span>{" "}
+          epidemic of our time.
+        </>
+      }
+      body={
+        <>
+          A generation that grew up{" "}
+          <span style={{ color: P.primary }}>perfectly connected</span> is
+          somehow the loneliest one yet — at home in India, and across the
+          world.
+        </>
+      }
+      attribution="Aspen Institute, 2025 · Cigna / global Gen Z surveys."
+      cards={LONELINESS_CARDS}
+      subIdx={subIdx}
+    />
+  )
+}
+
+function KidsSlide({ subIdx }: { subIdx: number }) {
+  return (
+    <InteractiveStatsSlide
+      kicker="and the kids pay first"
+      headline={
+        <>
+          The first generation raised by{" "}
+          <span style={{ color: P.primary, fontStyle: "italic" }}>
+            an algorithm.
+          </span>
+        </>
+      }
+      body={
+        <>
+          Today&rsquo;s teen spends{" "}
+          <span style={{ color: P.primary }}>almost nine hours</span> a day on
+          screens for entertainment — and reports feeling{" "}
+          <span style={{ color: P.secondary }}>more isolated</span>, not less.
+        </>
+      }
+      attribution="Common Sense Media, 2025 · Big Story Network, 2024."
+      cards={KIDS_CARDS}
       subIdx={subIdx}
     />
   )
@@ -695,12 +811,6 @@ const FEATURES: Feature[] = [
     body: "Four friends → one watchlist that reflects all of you, not the algorithm's pick of the week.",
   },
   {
-    id: "gc",
-    cat: "plan",
-    title: "Find a spot the whole GC can make.",
-    body: "Pulls everyone's availability, your shared cuisine taste, and proposes three places.",
-  },
-  {
     id: "run",
     cat: "build",
     title: "Start a run club in your colony.",
@@ -713,6 +823,948 @@ const FEATURES: Feature[] = [
     body: "Time limits, contact gates, content boundaries. Built for your kid, not for retention metrics.",
   },
 ]
+
+// alias retained as UseCasesSlide so SLIDES[] reference resolves
+function UseCasesSlide({ subIdx }: { subIdx: number }) {
+  return <FeaturesSlide subIdx={subIdx} />
+}
+
+/* ----------------------------------------------------------------- */
+/* problem-graph slide — five morphing states (one click per state)   */
+/* ----------------------------------------------------------------- */
+
+const PROBLEM_STATES: {
+  problem: string
+  solution: string
+}[] = [
+  {
+    problem: "01 — they're content machines, dopamine-hacking you.",
+    solution: "homie has no feed. no reels. no infinite scroll.",
+  },
+  {
+    problem: "02 — they don't foster real friendships.",
+    solution: "homie connects you to people via what you actually love.",
+  },
+  {
+    problem: "03 — they don't build communities, just timelines.",
+    solution: "homie organises your people into real communities.",
+  },
+  {
+    problem: "04 — they sell your identity to advertisers.",
+    solution: "on homie, businesses talk to communities — never to you.",
+  },
+  {
+    problem: "05 — they keep you on the screen forever.",
+    solution: "homie pushes you off the app, into real-life hangouts.",
+  },
+]
+
+const PG_NOISE_URL = "/images/textures/stronger-background-textuer-noise.png"
+
+const PG_VB_W = 1200
+const PG_VB_H = 600
+const PG_CX = PG_VB_W / 2
+const PG_CY = PG_VB_H / 2
+
+type PGPerson = {
+  id: string
+  label: string
+  color: string
+  state1: [number, number]  // spread layout (mirrors original SocialLattice)
+  venn: [number, number]    // states 2 + 3
+  irlZone: 0 | 1 | 2        // state 4: 0 cafe, 1 open mic, 2 run club
+  irlOffset: [number, number]  // offset within zone
+  spawnDelay: number  // seconds, for state 1 stagger
+}
+
+// State 1 positions mirror the original SocialLattice's spread (800-wide layout
+// centered in our 1200-wide viewBox: x_new = x_orig + 200). YOU sits at center.
+// irlOffset is relative to event-zone center (z.x, z.y=380); zones span y=150..450.
+const PG_PEOPLE_2: PGPerson[] = [
+  { id: "ma", label: "MA", color: "#A8C5B0", state1: [400, 165], venn: [340, 230], irlZone: 0, irlOffset: [-55, -55], spawnDelay: 0.4 },
+  { id: "jo", label: "JO", color: "#E8B784", state1: [800, 165], venn: [880, 230], irlZone: 1, irlOffset: [-55, -55], spawnDelay: 0.7 },
+  { id: "sa", label: "SA", color: "#A5B5D4", state1: [560, 100], venn: [800, 320], irlZone: 1, irlOffset: [55, -30], spawnDelay: 1.0 },
+  { id: "pr", label: "PR", color: "#D4A5A5", state1: [375, 385], venn: [600, 250], irlZone: 0, irlOffset: [55, -30], spawnDelay: 1.3 },
+  { id: "al", label: "AL", color: "#C5A5D4", state1: [825, 385], venn: [560, 470], irlZone: 2, irlOffset: [-50, -40], spawnDelay: 1.6 },
+  { id: "ri", label: "RI", color: "#D4C5A5", state1: [640, 500], venn: [470, 380], irlZone: 2, irlOffset: [40, 35], spawnDelay: 1.9 },
+  { id: "ta", label: "TA", color: "#9FBFA1", state1: [265, 290], venn: [380, 350], irlZone: 0, irlOffset: [0, 30], spawnDelay: 2.2 },
+  { id: "lu", label: "LU", color: "#E0A892", state1: [935, 290], venn: [720, 410], irlZone: 1, irlOffset: [0, 30], spawnDelay: 2.5 },
+]
+
+type PGInterest = { id: string; mark: string; x: number; y: number; spawnDelay: number }
+
+// Interest positions also mirror the original lattice's spread.
+const PG_INTERESTS_2: PGInterest[] = [
+  { id: "music", mark: "♫", x: 480, y: 75,  spawnDelay: 3.0 },
+  { id: "film",  mark: "▶", x: 680, y: 75,  spawnDelay: 3.15 },
+  { id: "book",  mark: "❡", x: 485, y: 235, spawnDelay: 3.3 },
+  { id: "game",  mark: "✦", x: 725, y: 235, spawnDelay: 3.45 },
+  { id: "anime", mark: "✿", x: 490, y: 540, spawnDelay: 3.6 },
+  { id: "sport", mark: "⚽", x: 715, y: 540, spawnDelay: 3.75 },
+]
+
+const PG_VENN_2 = [
+  { x: 360, y: 280, r: 200, mark: "🎮", label: "gaming",  fill: "#C5A5D4" },
+  { x: 840, y: 280, r: 200, mark: "🏐", label: "sports",  fill: "#A8C5B0" },
+  { x: 600, y: 420, r: 170, mark: "🎵", label: "music",   fill: "#E8B784" },
+]
+
+const PG_EVENTS_2 = [
+  { x: 280, y: 380, mark: "☕", label: "café meetup",   color: "#E8B784" },
+  { x: 600, y: 380, mark: "🎤", label: "open mic",      color: "#C5A5D4" },
+  { x: 920, y: 380, mark: "🏃", label: "run club",      color: "#A8C5B0" },
+]
+
+const PG_BUSINESSES_2 = [
+  { x: 80,           y: 80,           label: "Decathlon",   target: PG_VENN_2[1] },
+  { x: PG_VB_W - 80, y: 80,           label: "PlayStation", target: PG_VENN_2[0] },
+  { x: PG_VB_W - 80, y: PG_VB_H - 60, label: "Spotify",     target: PG_VENN_2[2] },
+]
+
+const PG_POSTS_2 = [
+  { mark: "▶", angle: 0 },
+  { mark: "♥", angle: 60 },
+  { mark: "↻", angle: 120 },
+  { mark: "★", angle: 180 },
+  { mark: "💬", angle: 240 },
+  { mark: "📷", angle: 300 },
+]
+
+function personPosFor(p: PGPerson, state: number): [number, number] {
+  if (state <= 1) return p.state1
+  if (state === 2 || state === 3) return p.venn
+  // state 4: IRL zones — offset is relative to zone center (z.x, z.y=380).
+  // zone bounds: y=150..450, so offsets must keep y in roughly [180, 420].
+  const z = PG_EVENTS_2[p.irlZone]
+  return [z.x + p.irlOffset[0], z.y + p.irlOffset[1]]
+}
+
+function ProblemGraphSlide({ subIdx }: { subIdx: number }) {
+  const state = Math.max(0, Math.min(PROBLEM_STATES.length - 1, subIdx + 1))
+  const cur = PROBLEM_STATES[state]
+  return (
+    <div className="flex w-full max-w-7xl flex-col gap-3">
+      <div className="flex items-baseline justify-between gap-6">
+        <FadeUp delay={0.05}>
+          <Kicker>problem → solution</Kicker>
+        </FadeUp>
+        <div
+          className="font-mono text-xs tracking-[0.3em] uppercase"
+          style={{ color: P.muted }}
+        >
+          {String(state + 1).padStart(2, "0")} / 05
+        </div>
+      </div>
+      <div
+        key={`p-${state}`}
+        className="flex flex-col gap-1"
+        style={{ animation: "ppt-fade-up 0.5s ease-out both" }}
+      >
+        <div
+          className="text-sm md:text-base"
+          style={{
+            color: P.muted,
+            fontFamily: "ui-monospace, SFMono-Regular, monospace",
+          }}
+        >
+          {cur.problem}
+        </div>
+        <div
+          className="text-2xl leading-tight md:text-3xl"
+          style={{ color: P.primary, fontFamily: SERIF, fontWeight: 600 }}
+        >
+          {cur.solution}
+        </div>
+      </div>
+
+      {/* full-bleed graph: breaks out of the centered slide column */}
+      <div
+        className="relative mt-1"
+        style={{
+          height: 600,
+          width: "100vw",
+          marginLeft: "calc(50% - 50vw)",
+          marginRight: "calc(50% - 50vw)",
+        }}
+      >
+        {/* noise texture overlay */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage: `url(${PG_NOISE_URL})`,
+            backgroundSize: "320px 320px",
+            backgroundRepeat: "repeat",
+            mixBlendMode: "multiply",
+            opacity: 0.22,
+          }}
+        />
+        <ProblemGraph state={state} />
+      </div>
+    </div>
+  )
+}
+
+function ProblemGraph({ state }: { state: number }) {
+  const showPeople = state >= 1
+  const showInterests = state >= 1 && state <= 3
+  const interestsDim = state >= 2  // grey out in venn states
+  const showVenn = state === 2 || state === 3
+  const showBusinesses = state === 3
+  const showEvents = state === 4
+  const showCenterYou = state === 0
+  const showPosts = state === 0
+
+  return (
+    <svg
+      viewBox={`0 0 ${PG_VB_W} ${PG_VB_H}`}
+      className="absolute inset-0 h-full w-full"
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <defs>
+        <radialGradient id="pg2-you-grad" cx="0.4" cy="0.4">
+          <stop offset="0%" stopColor="#FCD8B0" />
+          <stop offset="100%" stopColor={P.primary} />
+        </radialGradient>
+        <filter id="pg2-glow">
+          <feGaussianBlur stdDeviation="3" result="b" />
+          <feMerge>
+            <feMergeNode in="b" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <style>{`
+          @keyframes pg2-spawn {
+            0%   { opacity: 0; transform: scale(0.2); }
+            70%  { opacity: 1; transform: scale(1.08); }
+            100% { opacity: 1; transform: scale(1); }
+          }
+          @keyframes pg2-line-draw {
+            0%   { stroke-dashoffset: 600; opacity: 0; }
+            10%  { opacity: 1; }
+            100% { stroke-dashoffset: 0; opacity: 1; }
+          }
+          @keyframes pg2-line-pulse {
+            0%, 100% { opacity: 0.25; }
+            50%      { opacity: 0.55; }
+          }
+        `}</style>
+      </defs>
+
+      {/* Venn regions (states 2 + 3). Music label sits BELOW its circle so it
+          doesn't collide with the centered YO node. */}
+      <g
+        style={{
+          opacity: showVenn ? 1 : 0,
+          transition: "opacity 0.7s ease",
+        }}
+      >
+        {PG_VENN_2.map((v) => {
+          const labelBelow = v.label === "music"
+          const markY = labelBelow ? v.y + v.r - 50 : v.y - v.r + 30
+          const txtY = labelBelow ? v.y + v.r - 26 : v.y - v.r + 54
+          return (
+            <g key={v.label}>
+              <circle
+                cx={v.x}
+                cy={v.y}
+                r={v.r}
+                fill={`${v.fill}33`}
+                stroke={P.muted}
+                strokeOpacity={0.4}
+                strokeWidth={1.4}
+                strokeDasharray="5 5"
+              />
+              <text
+                x={v.x}
+                y={markY}
+                textAnchor="middle"
+                fontSize="26"
+              >
+                {v.mark}
+              </text>
+              <text
+                x={v.x}
+                y={txtY}
+                textAnchor="middle"
+                fontSize="14"
+                fontFamily="ui-monospace, monospace"
+                fill={P.muted}
+                letterSpacing="2"
+              >
+                {v.label.toUpperCase()}
+              </text>
+            </g>
+          )
+        })}
+      </g>
+
+      {/* Event zones (state 4) */}
+      <g
+        style={{
+          opacity: showEvents ? 1 : 0,
+          transition: "opacity 0.7s ease",
+        }}
+      >
+        {PG_EVENTS_2.map((z) => (
+          <g key={z.label}>
+            <rect
+              x={z.x - 140}
+              y={150}
+              width={280}
+              height={300}
+              rx={28}
+              fill={`${z.color}25`}
+              stroke={z.color}
+              strokeOpacity={0.6}
+              strokeWidth={1.6}
+              strokeDasharray="6 6"
+            />
+            <text
+              x={z.x}
+              y={205}
+              textAnchor="middle"
+              fontSize="44"
+            >
+              {z.mark}
+            </text>
+            <text
+              x={z.x}
+              y={240}
+              textAnchor="middle"
+              fontSize="14"
+              fontFamily="ui-monospace, monospace"
+              fill={P.text}
+              letterSpacing="2"
+            >
+              {z.label.toUpperCase()}
+            </text>
+          </g>
+        ))}
+      </g>
+
+      {/* Connecting lines (state 1: draw-in then pulse orange; states 2-3 dimmed; state 4 hidden) */}
+      <g
+        style={{
+          opacity: showInterests ? (interestsDim ? 0.35 : 1) : 0,
+          transition: "opacity 0.6s ease",
+        }}
+      >
+        {showPeople &&
+          PG_PEOPLE_2.map((p, idx) => {
+            const [px, py] = personPosFor(p, state)
+            const it = PG_INTERESTS_2[idx % PG_INTERESTS_2.length]
+            const pulseDelay = (idx * 0.18).toFixed(2)
+            return (
+              <g key={`threads-${p.id}`}>
+                {/* person → YO (the lattice spine) */}
+                <line
+                  x1={px}
+                  y1={py}
+                  x2={PG_CX}
+                  y2={PG_CY}
+                  stroke={P.primary}
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  style={{
+                    transition: "x1 0.95s cubic-bezier(0.32,0.72,0,1), y1 0.95s cubic-bezier(0.32,0.72,0,1)",
+                    animation:
+                      state === 1
+                        ? `pg2-line-draw 1.4s ${3.5 + idx * 0.05}s ease-out both, pg2-line-pulse 2.2s ${5 + Number(pulseDelay)}s ease-in-out infinite`
+                        : `pg2-line-pulse 2.4s ${pulseDelay}s ease-in-out infinite`,
+                  }}
+                />
+                {/* person → interest */}
+                <line
+                  x1={px}
+                  y1={py}
+                  x2={it.x}
+                  y2={it.y}
+                  stroke={P.primary}
+                  strokeOpacity={0.5}
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeDasharray="4 5"
+                  style={{
+                    transition: "x1 0.95s cubic-bezier(0.32,0.72,0,1), y1 0.95s cubic-bezier(0.32,0.72,0,1)",
+                    animation:
+                      state === 1
+                        ? `pg2-line-draw 1.5s ${3.7 + idx * 0.05}s ease-out both, pg2-line-pulse 2.4s ${5.2 + Number(pulseDelay)}s ease-in-out infinite`
+                        : `pg2-line-pulse 2.6s ${pulseDelay + 0.3}s ease-in-out infinite`,
+                  }}
+                />
+              </g>
+            )
+          })}
+      </g>
+
+      {/* Interest nodes (mounted state 1+, dimmed in 2-3, hidden in 4) */}
+      {showPeople &&
+        PG_INTERESTS_2.map((it) => (
+          <g
+            key={it.id}
+            transform={`translate(${it.x}, ${it.y})`}
+            style={{
+              opacity: showInterests ? (interestsDim ? 0.3 : 1) : 0,
+              transition: "opacity 0.6s ease",
+            }}
+          >
+            <g
+              style={{
+                animation:
+                  state === 1
+                    ? `pg2-spawn 0.55s ${it.spawnDelay}s ease-out both`
+                    : undefined,
+                transformOrigin: "center",
+              }}
+            >
+              <circle r="16" fill={P.elevated} stroke={P.primary} strokeWidth="1.6" />
+              <text
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize="16"
+                fill={P.primary}
+              >
+                {it.mark}
+              </text>
+            </g>
+          </g>
+        ))}
+
+      {/* YO node — center of the lattice for states 1+ (mirrors original SocialLattice) */}
+      {showPeople && (
+        <g
+          transform={`translate(${PG_CX}, ${PG_CY})`}
+          style={{
+            opacity: state === 4 ? 0 : 1,
+            transition: "opacity 0.6s ease",
+          }}
+        >
+          <g
+            style={{
+              animation:
+                state === 1
+                  ? `pg2-spawn 0.55s 0.0s ease-out both`
+                  : undefined,
+              transformOrigin: "center",
+            }}
+          >
+            <circle r="38" fill="url(#pg2-you-grad)" filter="url(#pg2-glow)" />
+            <text
+              textAnchor="middle"
+              dominantBaseline="central"
+              fontSize="14"
+              fontWeight={700}
+              fill="white"
+            >
+              YO
+            </text>
+          </g>
+        </g>
+      )}
+
+      {/* People nodes — mounted from state 1; smoothly transition between states */}
+      {showPeople &&
+        PG_PEOPLE_2.map((p) => {
+          const [x, y] = personPosFor(p, state)
+          return (
+            <g
+              key={p.id}
+              transform={`translate(${x}, ${y})`}
+              style={{
+                transition: "transform 1s cubic-bezier(0.32,0.72,0,1)",
+              }}
+            >
+              <g
+                style={{
+                  animation:
+                    state === 1
+                      ? `pg2-spawn 0.55s ${p.spawnDelay}s ease-out both`
+                      : undefined,
+                  transformOrigin: "center",
+                }}
+              >
+                <circle
+                  r="22"
+                  fill={p.color}
+                  stroke={P.elevated}
+                  strokeWidth="2.2"
+                  filter="url(#pg2-glow)"
+                />
+                <text
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontSize="12"
+                  fontWeight={700}
+                  fill={P.text}
+                >
+                  {p.label}
+                </text>
+              </g>
+            </g>
+          )
+        })}
+
+      {/* state 0 — YOU + posts orbiting + DELETED bin (no graph behind) */}
+      <g
+        style={{
+          opacity: showCenterYou ? 1 : 0,
+          transition: "opacity 0.5s ease",
+        }}
+      >
+        <g transform={`translate(${PG_CX}, ${PG_CY})`}>
+          <circle r="52" fill="url(#pg2-you-grad)" filter="url(#pg2-glow)" />
+          <text
+            textAnchor="middle"
+            dominantBaseline="central"
+            fontSize="16"
+            fontWeight={700}
+            fill="white"
+          >
+            YOU
+          </text>
+        </g>
+      </g>
+
+      <g
+        style={{
+          opacity: showPosts ? 1 : 0,
+          transition: "opacity 0.4s ease",
+        }}
+      >
+        {PG_POSTS_2.map((post, i) => {
+          const rad = (post.angle * Math.PI) / 180
+          const r = 160
+          const startX = PG_CX + Math.cos(rad) * r
+          const startY = PG_CY + Math.sin(rad) * r
+          const binX = PG_VB_W - 110
+          const binY = PG_VB_H - 90
+          return (
+            <g key={`post-${i}`}>
+              <style>{`
+                @keyframes pg2-suck-${i} {
+                  0%   { transform: translate(${startX}px, ${startY}px) scale(1); opacity: 1; }
+                  55%  { transform: translate(${startX}px, ${startY}px) scale(1); opacity: 1; }
+                  85%  { transform: translate(${(startX + binX) / 2}px, ${(startY + binY) / 2}px) scale(0.5); opacity: 0.85; }
+                  100% { transform: translate(${binX}px, ${binY}px) scale(0.08); opacity: 0; }
+                }
+              `}</style>
+              <g
+                style={{
+                  animation:
+                    state === 0
+                      ? `pg2-suck-${i} 5s ${i * 0.45}s ease-in-out infinite`
+                      : undefined,
+                }}
+              >
+                <rect
+                  x="-28"
+                  y="-22"
+                  width="56"
+                  height="44"
+                  rx="6"
+                  fill={P.elevated}
+                  stroke={P.muted}
+                  strokeOpacity="0.6"
+                />
+                <text
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                  fontSize="24"
+                  fill={P.muted}
+                >
+                  {post.mark}
+                </text>
+              </g>
+            </g>
+          )
+        })}
+
+        {/* bin */}
+        <g transform={`translate(${PG_VB_W - 110}, ${PG_VB_H - 90})`}>
+          <rect
+            x="-32"
+            y="-22"
+            width="64"
+            height="54"
+            rx="6"
+            fill="none"
+            stroke={P.primary}
+            strokeWidth="2.8"
+          />
+          <line x1="-36" y1="-28" x2="36" y2="-28" stroke={P.primary} strokeWidth="2.8" />
+          <line x1="-12" y1="-28" x2="-12" y2="-36" stroke={P.primary} strokeWidth="2.8" />
+          <line x1="12" y1="-28" x2="12" y2="-36" stroke={P.primary} strokeWidth="2.8" />
+          <text
+            x="0"
+            y="58"
+            textAnchor="middle"
+            fontSize="13"
+            fontFamily="ui-monospace, monospace"
+            fill={P.primary}
+            letterSpacing="2"
+          >
+            DELETED
+          </text>
+        </g>
+      </g>
+
+      {/* state 3 — businesses talk to communities */}
+      <g
+        style={{
+          opacity: showBusinesses ? 1 : 0,
+          transition: "opacity 0.5s ease",
+        }}
+      >
+        {PG_BUSINESSES_2.map((b, i) => (
+          <g key={b.label}>
+            <g transform={`translate(${b.x}, ${b.y})`}>
+              <rect
+                x="-62"
+                y="-24"
+                width="124"
+                height="48"
+                rx="8"
+                fill={P.elevated}
+                stroke={P.primary}
+                strokeWidth="1.6"
+              />
+              <text
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize="15"
+                fontWeight={700}
+                fill={P.primary}
+                fontFamily="ui-monospace, monospace"
+              >
+                {b.label}
+              </text>
+            </g>
+            <style>{`
+              @keyframes pg2-mail-${i} {
+                0%   { transform: translate(${b.x}px, ${b.y}px); opacity: 0; }
+                10%  { transform: translate(${b.x}px, ${b.y}px); opacity: 1; }
+                90%  { transform: translate(${b.target.x}px, ${b.target.y}px); opacity: 1; }
+                100% { transform: translate(${b.target.x}px, ${b.target.y}px); opacity: 0; }
+              }
+            `}</style>
+            <g
+              style={{
+                animation:
+                  state === 3
+                    ? `pg2-mail-${i} 3.2s ${i * 0.55}s ease-in-out infinite`
+                    : undefined,
+              }}
+            >
+              <rect x="-15" y="-11" width="30" height="22" rx="3" fill={P.primary} />
+              <text
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize="14"
+                fill={P.elevated}
+              >
+                ✉
+              </text>
+            </g>
+          </g>
+        ))}
+      </g>
+    </svg>
+  )
+}
+
+/* ----------------------------------------------------------------- */
+/* problems slide — five problems + scattered social-media icons      */
+/* ----------------------------------------------------------------- */
+
+const PROBLEMS: { n: string; title: string; body: string }[] = [
+  {
+    n: "01",
+    title: "Content machines.",
+    body: "Engineered to dopamine-hack you and harvest hours.",
+  },
+  {
+    n: "02",
+    title: "They don't foster friendships.",
+    body: "Followers and likes — none of which is a real bond.",
+  },
+  {
+    n: "03",
+    title: "They don't build communities.",
+    body: "A timeline isn't a community. It's a queue.",
+  },
+  {
+    n: "04",
+    title: "They don't respect privacy.",
+    body: "Your identity is the inventory. Behavioural data is the product.",
+  },
+  {
+    n: "05",
+    title: "They don't get you off the screen.",
+    body: "Every metric is built to keep you in. None to send you out.",
+  },
+]
+
+const SOCIAL_ICONS: { label: string; mark: string; x: number; y: number; rot: number; size: number }[] = [
+  { label: "FB", mark: "f", x: 6, y: 8, rot: -8, size: 64 },
+  { label: "Instagram", mark: "◧", x: 86, y: 6, rot: 6, size: 70 },
+  { label: "X", mark: "𝕏", x: 4, y: 78, rot: 12, size: 58 },
+  { label: "TikTok", mark: "♪", x: 92, y: 80, rot: -10, size: 62 },
+  { label: "Snap", mark: "👻", x: 14, y: 44, rot: -6, size: 52 },
+  { label: "YouTube", mark: "▶", x: 82, y: 50, rot: 10, size: 56 },
+  { label: "Reddit", mark: "★", x: 50, y: 4, rot: 4, size: 48 },
+  { label: "WhatsApp", mark: "✆", x: 50, y: 90, rot: -4, size: 50 },
+  { label: "LinkedIn", mark: "in", x: 28, y: 16, rot: 6, size: 44 },
+  { label: "Discord", mark: "✿", x: 72, y: 22, rot: -8, size: 48 },
+]
+
+function ProblemsSlide() {
+  return (
+    <div className="relative w-full max-w-7xl">
+      {/* scattered icon decorations */}
+      <div className="pointer-events-none absolute inset-0 z-0">
+        {SOCIAL_ICONS.map((ic, i) => (
+          <div
+            key={ic.label}
+            className="absolute flex items-center justify-center rounded-2xl"
+            style={{
+              left: `${ic.x}%`,
+              top: `${ic.y}%`,
+              width: ic.size,
+              height: ic.size,
+              transform: `translate(-50%, -50%) rotate(${ic.rot}deg)`,
+              backgroundColor: P.elevated,
+              border: `1px solid ${P.muted}33`,
+              boxShadow: `0 12px 32px -22px ${P.text}66`,
+              color: P.muted,
+              fontFamily: SERIF,
+              fontSize: ic.size * 0.42,
+              fontWeight: 700,
+              opacity: 0.55,
+              animation: `ppt-fade-up 0.8s ${0.05 * i}s ease-out both, ppt-pulse-line ${5 + i * 0.4}s ${i * 0.2}s ease-in-out infinite`,
+            }}
+            aria-hidden
+          >
+            {ic.mark}
+          </div>
+        ))}
+      </div>
+
+      <div className="relative z-10 mx-auto flex max-w-5xl flex-col items-center gap-8 text-center">
+        <FadeUp delay={0.05}>
+          <Kicker>the five problems</Kicker>
+        </FadeUp>
+        <FadeUp delay={0.18}>
+          <h2
+            style={{
+              fontFamily: SERIF,
+              fontSize: "clamp(40px, 5.4vw, 76px)",
+              lineHeight: 1.0,
+              letterSpacing: "-0.03em",
+              color: P.text,
+            }}
+          >
+            Today&rsquo;s social apps are{" "}
+            <span style={{ color: P.primary, fontStyle: "italic" }}>
+              not built for you.
+            </span>
+          </h2>
+        </FadeUp>
+
+        <div
+          className="grid w-full gap-3 pt-2"
+          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}
+        >
+          {PROBLEMS.map((p, i) => (
+            <FadeUp key={p.n} delay={0.4 + i * 0.07}>
+              <div
+                className="flex h-full flex-col items-start gap-2 rounded-xl border p-4 text-left"
+                style={{
+                  borderColor: `${P.muted}55`,
+                  backgroundColor: `${P.elevated}f2`,
+                  backdropFilter: "blur(2px)",
+                }}
+              >
+                <div
+                  className="font-mono text-[10px] tracking-[0.3em] uppercase"
+                  style={{ color: P.primary }}
+                >
+                  {p.n}
+                </div>
+                <div
+                  className="text-base leading-tight md:text-lg"
+                  style={{
+                    color: P.text,
+                    fontFamily: SERIF,
+                    fontWeight: 600,
+                  }}
+                >
+                  {p.title}
+                </div>
+                <div
+                  className="text-xs md:text-sm"
+                  style={{ color: P.text, opacity: 0.7, lineHeight: 1.4 }}
+                >
+                  {p.body}
+                </div>
+              </div>
+            </FadeUp>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/* ----------------------------------------------------------------- */
+/* feature inventory slides — consumer / business / child-protection */
+/* ----------------------------------------------------------------- */
+
+type FeatureItem = { name: string; body: string }
+
+function FeatureInventorySlide({
+  kicker,
+  headline,
+  highlight,
+  items,
+  cols = 3,
+}: {
+  kicker: string
+  headline: string
+  highlight: string
+  items: FeatureItem[]
+  cols?: number
+}) {
+  return (
+    <div className="flex w-full max-w-7xl flex-col gap-6">
+      <FadeUp delay={0.05}>
+        <Kicker>{kicker}</Kicker>
+      </FadeUp>
+      <FadeUp delay={0.18}>
+        <h2
+          style={{
+            fontFamily: SERIF,
+            fontSize: "clamp(40px, 5.2vw, 72px)",
+            lineHeight: 1.0,
+            letterSpacing: "-0.03em",
+            color: P.text,
+          }}
+        >
+          {headline}{" "}
+          <span style={{ color: P.primary, fontStyle: "italic" }}>
+            {highlight}
+          </span>
+        </h2>
+      </FadeUp>
+      <div
+        className="grid gap-4 pt-3"
+        style={{
+          gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`,
+        }}
+      >
+        {items.map((it, i) => (
+          <FadeUp key={it.name} delay={0.3 + i * 0.04}>
+            <div
+              className="h-full rounded-xl border p-5"
+              style={{
+                borderColor: `${P.muted}44`,
+                backgroundColor: P.elevated,
+              }}
+            >
+              <div
+                className="mb-1.5 text-[22px] leading-tight"
+                style={{ color: P.text, fontFamily: SERIF, fontWeight: 600 }}
+              >
+                {it.name}
+              </div>
+              <div
+                className="text-base leading-snug"
+                style={{ color: P.text, opacity: 0.78 }}
+              >
+                {it.body}
+              </div>
+            </div>
+          </FadeUp>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+const CONSUMER_FEATURES: FeatureItem[] = [
+  { name: "Friend network", body: "Add, manage, tier friends — close vs regular." },
+  { name: "Direct messages", body: "1:1 chats with friends and the homie AI." },
+  { name: "Group chats", body: "Up to 15 members, with admin controls." },
+  { name: "Voice calling", body: "VAPI-powered live voice with friends." },
+  { name: "Communities", body: "Discover, join, create — by interest or location." },
+  { name: "Posts, polls, events", body: "Announce, vote, plan inside any community." },
+  { name: "Spotify integration", body: "Now-playing feed; tastes auto-populated." },
+  { name: "Media profile", body: "Music, films, books, games, anime — provider-backed." },
+  { name: "Coupons & offers", body: "Save and redeem deals from your communities." },
+  { name: "Profile & visibility", body: "Interests, status, location, workplace — your call." },
+  { name: "Notifications", body: "Real-time: requests, invites, messages, events." },
+  { name: "Discover by interest", body: "Find people via what they actually love." },
+]
+
+const BUSINESS_FEATURES: FeatureItem[] = [
+  { name: "Business account", body: "Claim a profile — category, contact, tagline." },
+  { name: "Branches & locations", body: "Multiple outlets, services, hours per location." },
+  { name: "Org communities", body: "Internal channels for team-only conversation." },
+  { name: "Team voice chat", body: "VAPI calls inside the company channel." },
+  { name: "Ad campaigns", body: "Compose, submit for approval, schedule." },
+  { name: "Coupons & promos", body: "Targeted to communities, not random feeds." },
+  { name: "Ad analytics", body: "Impressions, clicks, coupon saves, redemptions." },
+  { name: "Summary metrics", body: "Aggregate performance across active campaigns." },
+  { name: "Team & roles", body: "Add employees / managers with scoped access." },
+  { name: "Deep-link pages", body: "Shareable slugs gated to verified members." },
+]
+
+const CHILD_FEATURES: FeatureItem[] = [
+  { name: "Parental child accounts", body: "Create and manage minors with guardian controls." },
+  { name: "Multi-guardian", body: "Co-parents and approved guardians can co-manage." },
+  { name: "Spouse linking", body: "Connect spouse for shared calendar visibility." },
+  { name: "Night-lock", body: "Restrict messaging to close circle during sleep hours." },
+  { name: "Content limits", body: "Block specific users and communities per child." },
+  { name: "Cross-age gating", body: "Approve age-mismatched friendships explicitly." },
+  { name: "Account lockdown", body: "Disable messaging instantly in high-risk moments." },
+  { name: "Audit & alerts", body: "Parents see every friendship and permission change." },
+]
+
+function ConsumerFeaturesSlide() {
+  return (
+    <FeatureInventorySlide
+      kicker="for everyone"
+      headline="Built so the people you know"
+      highlight="can be known better."
+      items={CONSUMER_FEATURES}
+      cols={3}
+    />
+  )
+}
+
+function BusinessFeaturesSlide() {
+  return (
+    <FeatureInventorySlide
+      kicker="for businesses"
+      headline="Reach communities,"
+      highlight="not individual identities."
+      items={BUSINESS_FEATURES}
+      cols={3}
+    />
+  )
+}
+
+function ChildProtectionSlide() {
+  return (
+    <FeatureInventorySlide
+      kicker="for parents"
+      headline="A social app"
+      highlight="parents actually want their kids on."
+      items={CHILD_FEATURES}
+      cols={2}
+    />
+  )
+}
 
 function FeaturesSlide({ subIdx }: { subIdx: number }) {
   // selected card: subIdx -1 → 0, subIdx 0 → 1, ..., subIdx 4 → 5
@@ -813,7 +1865,7 @@ function FeaturesSlide({ subIdx }: { subIdx: number }) {
           style={{
             borderColor: `${P.muted}33`,
             backgroundColor: P.elevated,
-            height: 340,
+            height: 580,
             overflow: "hidden",
           }}
         >
@@ -1024,15 +2076,14 @@ function MovieViz() {
   return (
     <div className="relative h-full">
       <svg
-        viewBox="0 0 100 70"
+        viewBox="0 0 100 100"
         className="h-full w-full"
         preserveAspectRatio="xMidYMid meet"
-        style={{ overflow: "visible" }}
       >
         {/* arrows */}
         {people.map((p, i) => {
           const cx = 50
-          const cy = 35
+          const cy = 50
           const sign = p.x < 50 ? 1 : -1
           return (
             <line
@@ -1054,7 +2105,7 @@ function MovieViz() {
         {/* center box */}
         <rect
           x="32"
-          y="22"
+          y="37"
           width="36"
           height="26"
           rx="3"
@@ -1064,7 +2115,7 @@ function MovieViz() {
         />
         <text
           x="50"
-          y="29"
+          y="44"
           textAnchor="middle"
           fontSize="3.4"
           fontFamily="ui-monospace, monospace"
@@ -1076,7 +2127,7 @@ function MovieViz() {
         </text>
         <text
           x="50"
-          y="40"
+          y="55"
           textAnchor="middle"
           fontSize="7"
           fontWeight={700}
@@ -1087,7 +2138,7 @@ function MovieViz() {
         </text>
         <text
           x="50"
-          y="45"
+          y="60"
           textAnchor="middle"
           fontSize="3.4"
           fill={P.muted}
@@ -1125,14 +2176,14 @@ function MovieViz() {
         {/* highlight ring */}
         <circle
           cx="50"
-          cy="35"
+          cy="50"
           r="22"
           fill="none"
           stroke={P.primary}
           strokeWidth="0.5"
           opacity="0.5"
           style={{
-            transformOrigin: "50px 35px",
+            transformOrigin: "50px 50px",
             animation: "ppt-ping-soft 2.6s ease-out infinite",
           }}
         />
@@ -1374,17 +2425,6 @@ function KidModeViz() {
           >
             ⚐ PROTECTED
           </text>
-          <text
-            x="50"
-            y="67"
-            textAnchor="middle"
-            fontSize="3.6"
-            fontFamily="ui-monospace, monospace"
-            fill={P.muted}
-            letterSpacing="0.3"
-          >
-            time-limited · contact-gated · content-bounded
-          </text>
         </g>
       </svg>
     </div>
@@ -1513,34 +2553,22 @@ function CommunitySlide() {
 
 function DemoSlide() {
   return (
-    <div className="flex w-full max-w-5xl flex-col items-center gap-10 text-center">
+    <div className="flex w-full max-w-5xl flex-col items-center gap-8 text-center">
       <FadeUp delay={0.05}>
-        <Kicker>now let&rsquo;s see it</Kicker>
+        <Kicker>see it for yourself</Kicker>
       </FadeUp>
       <FadeUp delay={0.2}>
         <h2
           style={{
             fontFamily: SERIF,
-            fontSize: "clamp(72px, 13vw, 200px)",
-            lineHeight: 0.9,
-            letterSpacing: "-0.04em",
+            fontSize: "clamp(120px, 22vw, 320px)",
+            lineHeight: 0.88,
+            letterSpacing: "-0.05em",
             color: P.text,
           }}
         >
-          Setup in{" "}
-          <span style={{ color: P.primary, fontStyle: "italic" }}>
-            60 seconds.
-          </span>
+          <span style={{ color: P.primary, fontStyle: "italic" }}>demo.</span>
         </h2>
-      </FadeUp>
-      <FadeUp delay={0.7}>
-        <p
-          className="max-w-2xl text-2xl md:text-3xl"
-          style={{ color: P.text, opacity: 0.85 }}
-        >
-          No contacts scrape. No follow-suggestions for strangers.{" "}
-          <span style={{ color: P.secondary }}>Just your people.</span>
-        </p>
       </FadeUp>
     </div>
   )
@@ -2247,20 +3275,14 @@ function PersistentLattice({
   idx: number
   subIdx: number
 }) {
-  const rect =
-    idx === 9
-      ? { left: "50%", top: "12%", width: "47%", height: "76%", opacity: 1 }
-      : idx === 10
-        ? { left: "4%", top: "40%", width: "92%", height: "56%", opacity: 1 }
-        : idx === 11
-          ? { left: "3%", top: "12%", width: "47%", height: "76%", opacity: 1 }
-          : {
-              left: "26%",
-              top: "20%",
-              width: "48%",
-              height: "60%",
-              opacity: 0,
-            }
+  // disabled in the new deck — the morphing problem-graph slide owns its own viz.
+  const rect = {
+    left: "26%",
+    top: "20%",
+    width: "48%",
+    height: "60%",
+    opacity: 0,
+  }
 
   const mode = computeLatticeMode(idx, subIdx)
 
