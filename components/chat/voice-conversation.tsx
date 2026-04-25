@@ -3,6 +3,8 @@
 import { Phone, PhoneCall } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { ToolPartsList } from "@/components/chat/tool-cards/tool-part-renderer"
+import type { PersistedPart } from "@/components/chat/tool-cards/types"
 
 interface Message {
   id: string
@@ -11,6 +13,10 @@ interface Message {
   senderName?: string
   timestamp: string
   role?: "user" | "assistant" | "system"
+  // Rich-UI parts captured during a voice call. Persisted messages for
+  // tool calls carry these so the transcript re-opens with the same cards
+  // that were visible live in the VoiceOverlay.
+  parts?: PersistedPart[]
 }
 
 interface VoiceConversationProps {
@@ -52,17 +58,35 @@ export function VoiceConversation({
           </div>
         ) : (
           <div className="space-y-3 max-w-3xl mx-auto">
-            {messages.map((m) => (
-              <div key={m.id} className="rounded-lg border p-3 bg-card">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                    {m.role === "assistant" ? "Homie" : "You"}
-                  </span>
-                  <span className="text-xs text-muted-foreground">{m.timestamp}</span>
+            {messages.map((m) => {
+              // Rich-UI parts only apply to assistant messages. The voice
+              // persist path writes a single "assistant" message per call
+              // whose `parts` list holds every tool card; the user-side
+              // transcripts stay plain text.
+              const hasRichParts =
+                m.role === "assistant" &&
+                Array.isArray(m.parts) &&
+                m.parts.some((p) => p.type !== "text" && p.toolName)
+
+              return (
+                <div key={m.id} className="rounded-lg border p-3 bg-card">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      {m.role === "assistant" ? "Homie" : "You"}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{m.timestamp}</span>
+                  </div>
+                  {m.content && (
+                    <p className="text-sm leading-relaxed">{m.content}</p>
+                  )}
+                  {hasRichParts && m.parts && (
+                    <div className="mt-2">
+                      <ToolPartsList parts={m.parts} />
+                    </div>
+                  )}
                 </div>
-                <p className="text-sm leading-relaxed">{m.content}</p>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </ScrollArea>

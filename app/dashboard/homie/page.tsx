@@ -147,17 +147,28 @@ export default function Page() {
     assistantId: process.env.NEXT_PUBLIC_VAPI_ASSISTANT_ID
   }
 
+  // Snapshot of the in-flight voice call's rich-UI parts. Held in a ref so
+  // the `call-end` handler can persist them as a single assistant message
+  // (with the full `parts` array) right before Vapi tears the call down.
+  // The live overlay reads the authoritative list straight off the hook.
+  const voiceToolPartsRef = useRef<PersistedPart[]>([])
+
   const {
     isCallActive,
     error: vapiError,
     volume,
     liveTranscript,
     activeToolCalls,
+    toolParts,
     startCall,
     stopCall,
     sendTextMessage,
   } = useVapiIntegration({
     config: vapiConfig,
+    userId: convexUserId,
+    onToolPartsChange: (parts) => {
+      voiceToolPartsRef.current = parts
+    },
     onTranscript: (transcript, role) => {
       const convId = activeCallConversationRef.current
       if (!convId) return
@@ -171,10 +182,27 @@ export default function Page() {
     },
     onCallStart: () => {
       console.log("Homie voice call started")
+      voiceToolPartsRef.current = []
     },
     onCallEnd: () => {
       console.log("Homie voice call ended")
+      // Persist all tool-call cards collected during the call as a single
+      // assistant message so the saved transcript re-opens with the same
+      // rich UI. Content stays blank — each part stands on its own.
+      const convId = activeCallConversationRef.current
+      const finalParts = voiceToolPartsRef.current
+      if (convId && finalParts.length > 0) {
+        createMessage({
+          conversationId: convId,
+          role: "assistant",
+          content: "",
+          parts: finalParts,
+        }).catch((err) =>
+          console.error("Failed to save voice tool parts:", err),
+        )
+      }
       activeCallConversationRef.current = null
+      voiceToolPartsRef.current = []
       setIsVoiceActive(false)
     },
   })
@@ -501,6 +529,7 @@ export default function Page() {
                     volume={volume}
                     liveTranscript={liveTranscript}
                     activeToolCalls={activeToolCalls}
+                    toolParts={toolParts}
                     onEndCall={endCurrentCall}
                     error={vapiError}
                   />

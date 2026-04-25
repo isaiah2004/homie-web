@@ -3,11 +3,18 @@
 import { useMemo } from "react"
 import { PhoneOff, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ToolPartsList } from "@/components/chat/tool-cards/tool-part-renderer"
+import type { PersistedPart } from "@/components/chat/tool-cards/types"
 
 interface VoiceOverlayProps {
   volume: number
   liveTranscript: { user: string; assistant: string }
   activeToolCalls?: string[]
+  // Rich-UI tool parts collected from Vapi `tool-calls` events. When
+  // present they render as the same cards the text chat uses (friend
+  // places / media / projects / interests) so the user sees matching
+  // posters, addresses, tags etc. while the assistant talks them through.
+  toolParts?: PersistedPart[]
   onEndCall: () => void
   error?: string | null
 }
@@ -25,6 +32,7 @@ export function VoiceOverlay({
   volume,
   liveTranscript,
   activeToolCalls = [],
+  toolParts = [],
   onEndCall,
   error,
 }: VoiceOverlayProps) {
@@ -37,6 +45,8 @@ export function VoiceOverlay({
     () => Array.from({ length: BAR_COUNT }, (_, i) => Math.sin(i * 0.7) * 0.3 + 0.7),
     [],
   )
+
+  const hasToolParts = toolParts.length > 0
 
   return (
     <div className="w-full max-w-xl flex flex-col items-center justify-center gap-8 py-10 px-6 bg-gradient-to-b from-background to-muted/40 rounded-xl border">
@@ -75,6 +85,15 @@ export function VoiceOverlay({
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           <span>{toolLabel}</span>
+        </div>
+      )}
+
+      {hasToolParts && (
+        // Align the cards to the top so the overlay scrolls the results
+        // instead of squeezing them when the list grows. `text-left` resets
+        // the centered text defaults above — cards need normal alignment.
+        <div className="w-full text-left">
+          <ToolPartsList parts={toolParts} />
         </div>
       )}
 
