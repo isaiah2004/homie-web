@@ -111,7 +111,11 @@ async function computeMatches(
   const queryString = buildQueryString(viewer);
   const entityTypes: Array<"interest" | "media"> = ["interest", "media"];
   const vectorScoreByOwner = new Map<string, number>();
-  if (queryString.trim().length > 0) {
+  // Skip the embedding call when we have no usable query string OR no OpenAI
+  // key configured (e.g. test environments). Gives a deterministic 0 vector
+  // sub-score instead of crashing.
+  const hasOpenAI = Boolean(process.env.OPENAI_API_KEY);
+  if (queryString.trim().length > 0 && hasOpenAI) {
     for (const entityType of entityTypes) {
       const hits: SearchHit[] = await ctx.runAction(
         internal.embeddings.searchProfileItems,
