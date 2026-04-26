@@ -14,6 +14,8 @@ import {
   UserPlusIcon,
   XIcon,
   ExternalLinkIcon,
+  Link2Icon,
+  MessagesSquareIcon,
 } from "lucide-react"
 
 import { api } from "@/convex/_generated/api"
@@ -111,6 +113,9 @@ export default function Page() {
 
   const respond = useIdentifiedMutation(api.eventInvites.respondToInvite)
   const cancelEvent = useIdentifiedMutation(api.events.cancelEvent)
+  const generateShareLink = useIdentifiedMutation(
+    api.eventRooms.generateShareLink,
+  )
 
   if (activeUser.isDevMode && !activeUser.devUserId) {
     return (
@@ -181,6 +186,17 @@ export default function Page() {
     }
   }
 
+  async function handleCopyShareLink() {
+    try {
+      const { shareToken } = await generateShareLink({ eventId })
+      const url = `${window.location.origin}/dashboard/events/${eventId}/lobby?join=${shareToken}`
+      await navigator.clipboard.writeText(url)
+      toast.success("Link copied")
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not copy link")
+    }
+  }
+
   return (
     <PageShell header={<SiteHeader pageName="Event" />}>
       <div className="flex-1 flex flex-col min-w-0 overflow-auto">
@@ -233,8 +249,24 @@ export default function Page() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  {!cancelled && (
+                    <Button size="sm" variant="outline" asChild>
+                      <Link href={`/dashboard/events/${event._id}/lobby`}>
+                        <MessagesSquareIcon className="size-4" />
+                        Open lobby
+                      </Link>
+                    </Button>
+                  )}
                   {isCreator && !cancelled && (
                     <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleCopyShareLink}
+                      >
+                        <Link2Icon className="size-4" />
+                        Copy share link
+                      </Button>
                       <Button size="sm" variant="outline" asChild>
                         <Link href={`/dashboard/events/${event._id}/edit`}>
                           <PencilIcon className="size-4" />
