@@ -512,6 +512,9 @@ export const notifications = defineTable({
     v.literal("event_declined"),
     v.literal("event_cancelled"),
     v.literal("event_updated"),
+    v.literal("event_room_join"),
+    v.literal("event_match_ready"),
+    v.literal("event_room_message_mention"),
     // Placeholders for PRs #5/#6/#7/#8 — declared now so future features
     // don't need a schema migration. Unused today but valid.
     v.literal("community_join_request"),
@@ -590,11 +593,21 @@ export const events = defineTable({
   // UI next to the creation timestamp so attendees know the page has moved
   // since they last looked at it.
   editedAt: v.optional(v.number()),
+  // Event Room (lobby) fields. `shareToken` is a 16-char base32 string the
+  // creator can share to allow anyone with the link to join the lobby;
+  // revoke clears it. `roomEnabled` flips false when an event is cancelled
+  // — existing lobby members keep history but new joins are blocked.
+  // `roomMemberCount` is a denormalized counter kept in sync by the
+  // eventRoom mutations.
+  shareToken: v.optional(v.string()),
+  roomMemberCount: v.optional(v.number()),
+  roomEnabled: v.optional(v.boolean()),
 })
   .index("by_creator", ["createdBy"])
   .index("by_startsAt", ["startsAt"])
   .index("by_status_and_startsAt", ["status", "startsAt"])
-  .index("by_community_and_startsAt", ["communityId", "startsAt"]);
+  .index("by_community_and_startsAt", ["communityId", "startsAt"])
+  .index("by_shareToken", ["shareToken"]);
 
 // Event invites. One row per (event, invitee). Status drives the RSVP UI;
 // `respondedAt` is null while `status === "pending"`. Creator-side access
@@ -616,6 +629,57 @@ export const eventInvites = defineTable({
   .index("by_invitee", ["inviteeId"])
   .index("by_invitee_and_status", ["inviteeId", "status"])
   .index("by_event_and_invitee", ["eventId", "inviteeId"]);
+
+// Event Rooms (lobbies). One row per (event, member). Hosts are seeded on
+// event creation; everyone else joins via the share link or is auto-added
+// when accepting an invite. `lastReadAt` powers the read-state pill (no
+// inline readBy[] on messages because rooms can grow much larger than
+// groupChats — the per-row scan would be O(N) per send).
+export const eventRoomMembers = defineTable({
+  eventId: v.id("events"),
+  userId: v.id("users"),
+  role: v.union(v.literal("host"), v.literal("member")),
+  joinedAt: v.number(),
+  lastReadAt: v.optional(v.number()),
+})
+  .index("by_event", ["eventId"])
+  .index("by_user", ["userId"])
+  .index("by_event_and_user", ["eventId", "userId"]);
+
+// Messages in an event-room lobby. Mirrors groupChatMessages without the
+// agent flow / readBy[] (read-state lives on eventRoomMembers.lastReadAt).
+export const eventRoomMessages = defineTable({
+  eventId: v.id("events"),
+  from: v.id("users"),
+  content: v.string(),
+  format: v.union(
+    v.literal("plain"),
+    v.literal("markdown"),
+    v.literal("html"),
+  ),
+  attachmentIds: v.optional(v.array(v.id("attachments"))),
+  sentAt: v.number(),
+}).index("by_event_and_sentAt", ["eventId", "sentAt"]);
+
+// Per-(event, viewer) auto-match state. Tracks how many rerolls the viewer
+// has burned (cap 3), which user ids have already been shown so future
+// rerolls don't re-suggest them, and the most recent set of matches with
+// scores + reasons. Matches are persisted (not recomputed on every read)
+// so the UI is cheap and reads stay deterministic between rerolls.
+export const eventMatchState = defineTable({
+  eventId: v.id("events"),
+  viewerId: v.id("users"),
+  rerollCount: v.number(),
+  shownUserIds: v.array(v.id("users")),
+  currentMatches: v.array(
+    v.object({
+      userId: v.id("users"),
+      score: v.number(),
+      reasons: v.array(v.string()),
+    }),
+  ),
+  lastComputedAt: v.number(),
+}).index("by_event_and_viewer", ["eventId", "viewerId"]);
 
 // Group chats. One row per group. `memberCount` is a denormalized counter
 // kept in sync by the group-chat mutations so that listing queries don't need
@@ -1344,6 +1408,9 @@ export default defineSchema({
   notifications,
   events,
   eventInvites,
+  eventRoomMembers,
+  eventRoomMessages,
+  eventMatchState,
   groupChats,
   groupChatMembers,
   groupChatMessages,
