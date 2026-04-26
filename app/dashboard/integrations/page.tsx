@@ -11,7 +11,6 @@ import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { SiteHeader } from "@/components/site-header"
 import { PageShell } from "@/components/dashboard-layout"
-import { AiKeysCard } from "@/components/integrations/AiKeysCard"
 import { SpotifyIntegrationCard } from "@/components/spotify/SpotifyIntegrationCard"
 import { SpotifyFeed } from "@/components/spotify/SpotifyFeed"
 import { NowPlayingPill } from "@/components/spotify/NowPlayingPill"
@@ -91,8 +90,6 @@ export default function Page() {
               profile.
             </p>
           </div>
-
-          <AiKeysCard />
 
           <SpotifyIntegrationCard />
 

@@ -5,6 +5,7 @@ import { PageShell } from "@/components/dashboard-layout"
 import { UserInfoForm } from "@/components/app-ui/UserInfoForm"
 import { BusinessInfoForm } from "@/components/app-ui/BusinessInfoForm"
 import { ProfileSideNav } from "@/components/app-ui/ProfileSideNav"
+import { AiKeysCard } from "@/components/integrations/AiKeysCard"
 import { useAccountType } from "@/hooks/use-account-type"
 
 export default function Page() {
@@ -35,8 +36,11 @@ export default function Page() {
           {/* Keep the personal side nav only for the personal branch — the
               business form renders its own section structure. */}
           {!isBusiness && <ProfileSideNav />}
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 space-y-6">
             {isBusiness ? <BusinessInfoForm /> : <UserInfoForm />}
+            <section id="section-ai-keys">
+              <AiKeysCard />
+            </section>
           </div>
         </div>
       </div>

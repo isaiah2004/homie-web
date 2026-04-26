@@ -259,11 +259,11 @@ export default function Page() {
           const provider = byokMatch[1]
           toast.error(`Add your ${provider} API key`, {
             description:
-              "Production runs on your own keys. Add one in Settings → Integrations.",
+              "Production runs on your own keys. Add one in your Profile.",
             action: {
-              label: "Open settings",
+              label: "Open profile",
               onClick: () => {
-                window.location.href = "/dashboard/integrations"
+                window.location.href = "/dashboard/profile#section-ai-keys"
               },
             },
             duration: 8000,

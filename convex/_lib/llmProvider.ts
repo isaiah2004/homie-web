@@ -13,7 +13,7 @@
 // Missing-key on prod throws `BYOKRequiredError` whose message starts with
 // the sentinel `[BYOK_REQUIRED:<provider>]`. The chat client matches on that
 // prefix to swap the generic toast for a "set your key" CTA pointing at
-// /dashboard/integrations.
+// /dashboard/profile#section-ai-keys.
 
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
@@ -43,7 +43,7 @@ export class BYOKRequiredError extends Error {
   constructor(provider: LlmProvider) {
     super(
       `[BYOK_REQUIRED:${provider}] No ${provider} API key provided. ` +
-        `Open Settings → Integrations and add your ${provider} key.`,
+        `Open your Profile and add your ${provider} key.`,
     );
     this.name = "BYOKRequiredError";
     this.provider = provider;
