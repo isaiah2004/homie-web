@@ -3,31 +3,30 @@
 import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText } from "ai";
 import type { Doc } from "./_generated/dataModel";
-
-const CHAT_MODEL = "gemini-2.5-flash";
+import { resolveLlm } from "./_lib/llmProvider";
 
 export const generateAgentResponse = internalAction({
   args: {
     responseId: v.id("agentChatResponses"),
     askerId: v.id("users"),
     query: v.string(),
+    llmProvider: v.optional(
+      v.union(v.literal("gemini"), v.literal("minimax")),
+    ),
+    llmApiKey: v.optional(v.string()),
   },
-  handler: async (ctx, { responseId, askerId, query }): Promise<void> => {
-    const googleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    if (!googleKey) {
-      await ctx.runMutation(internal.dm.finalizeAgentResponse, {
-        responseId,
-        status: "failed",
-        error:
-          "GOOGLE_GENERATIVE_AI_API_KEY not configured on the Convex deployment",
-      });
-      return;
-    }
-
+  handler: async (
+    ctx,
+    { responseId, askerId, query, llmProvider, llmApiKey },
+  ): Promise<void> => {
     try {
+      const { model } = resolveLlm({
+        provider: llmProvider,
+        apiKey: llmApiKey,
+      });
+
       const user: Doc<"users"> | null = await ctx.runQuery(
         internal.users.getUserById,
         { userId: askerId },
@@ -64,9 +63,8 @@ export const generateAgentResponse = internalAction({
         .filter(Boolean)
         .join("\n\n");
 
-      const google = createGoogleGenerativeAI({ apiKey: googleKey });
       const { text } = await generateText({
-        model: google(CHAT_MODEL),
+        model,
         system,
         prompt: query,
         temperature: 0.7,

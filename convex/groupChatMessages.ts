@@ -190,6 +190,12 @@ export const askGroupAgent = mutation({
     groupChatId: v.id("groupChats"),
     query: v.string(),
     replyMode: v.union(v.literal("private"), v.literal("group")),
+    // BYOK credentials forwarded from the browser's localStorage. Both
+    // optional so non-prod env-var fallback still works.
+    llmProvider: v.optional(
+      v.union(v.literal("gemini"), v.literal("minimax")),
+    ),
+    llmApiKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const viewerId = await resolveViewerId(ctx, {
@@ -220,6 +226,8 @@ export const askGroupAgent = mutation({
         askerId: viewerId,
         query: cleaned,
         replyMode: args.replyMode,
+        llmProvider: args.llmProvider,
+        llmApiKey: args.llmApiKey,
       },
     );
 

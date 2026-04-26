@@ -4,15 +4,11 @@ import { v } from "convex/values";
 import { internalAction } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { generateText, generateObject, stepCountIs } from "ai";
+import { generateText, generateObject, stepCountIs, type LanguageModel } from "ai";
 import { z } from "zod";
 import type { Id } from "./_generated/dataModel";
 import { buildAgentTools } from "./agentTools";
-
-// Model used for every skill. Kept at flash-lite to stay cheap; the router
-// + individual skills all fit comfortably.
-const CHAT_MODEL = "gemini-2.5-flash";
+import { resolveLlm } from "./_lib/llmProvider";
 
 type SkillName = "findHangout" | "pickMovie" | "scheduleEvent" | "general";
 
@@ -92,9 +88,8 @@ function tryParseStartsAt(
 async function runFindHangout(
   members: MemberProfile[],
   query: string,
-  googleKey: string,
+  model: LanguageModel,
 ): Promise<{ content: string }> {
-  const google = createGoogleGenerativeAI({ apiKey: googleKey });
   const memberSnippets = members
     .map((m) => {
       const places = m.places
@@ -133,7 +128,7 @@ async function runFindHangout(
   ].join("\n");
 
   const { text } = await generateText({
-    model: google(CHAT_MODEL),
+    model,
     system,
     prompt,
     temperature: 0.7,
@@ -144,9 +139,8 @@ async function runFindHangout(
 async function runPickMovie(
   members: MemberProfile[],
   query: string,
-  googleKey: string,
+  model: LanguageModel,
 ): Promise<{ content: string }> {
-  const google = createGoogleGenerativeAI({ apiKey: googleKey });
   const memberSnippets = members
     .map((m) => {
       const watchable = m.media
@@ -186,7 +180,7 @@ async function runPickMovie(
   ].join("\n");
 
   const { text } = await generateText({
-    model: google(CHAT_MODEL),
+    model,
     system,
     prompt,
     temperature: 0.7,
@@ -199,10 +193,8 @@ async function runScheduleEvent(
   groupChatId: Id<"groupChats">,
   askerId: Id<"users">,
   query: string,
-  googleKey: string,
+  model: LanguageModel,
 ): Promise<{ content: string; toolResults?: string }> {
-  const google = createGoogleGenerativeAI({ apiKey: googleKey });
-
   const recent: Array<{
     fromName: string;
     plainText: string;
@@ -230,7 +222,7 @@ async function runScheduleEvent(
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const { object: extracted } = await generateObject({
-    model: google(CHAT_MODEL),
+    model,
     schema: extractionSchema,
     system: [
       "You are an event-extraction assistant. Given a short chat transcript and an optional user prompt, determine if there is enough info to schedule an event.",
@@ -320,9 +312,8 @@ async function runGeneral(
   ctx: ActionCtx,
   askerId: Id<"users">,
   query: string,
-  googleKey: string,
+  model: LanguageModel,
 ): Promise<{ content: string }> {
-  const google = createGoogleGenerativeAI({ apiKey: googleKey });
   const system = [
     "You are Homie — a helpful assistant inside a group chat.",
     "Answer the asker concisely. If they're asking about something related to their friends (places, media, projects, interests), call the appropriate tool.",
@@ -330,7 +321,7 @@ async function runGeneral(
   ].join("\n");
 
   const { text } = await generateText({
-    model: google(CHAT_MODEL),
+    model,
     system,
     prompt: query,
     tools: buildAgentTools(ctx, askerId),
@@ -351,27 +342,20 @@ export const handleGroupAgentRequest = internalAction({
     askerId: v.id("users"),
     query: v.string(),
     replyMode: v.union(v.literal("private"), v.literal("group")),
+    llmProvider: v.optional(
+      v.union(v.literal("gemini"), v.literal("minimax")),
+    ),
+    llmApiKey: v.optional(v.string()),
   },
   handler: async (
     ctx,
-    { responseId, groupChatId, askerId, query },
+    { responseId, groupChatId, askerId, query, llmProvider, llmApiKey },
   ): Promise<void> => {
-    const googleKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    if (!googleKey) {
-      await ctx.runMutation(
-        internal.groupChatMessages.finalizeGroupAgentResponse,
-        {
-          responseId,
-          status: "failed",
-          error:
-            "GOOGLE_GENERATIVE_AI_API_KEY not configured on the Convex deployment",
-        },
-      );
-      return;
-    }
-
     try {
-      const google = createGoogleGenerativeAI({ apiKey: googleKey });
+      const { model } = resolveLlm({
+        provider: llmProvider,
+        apiKey: llmApiKey,
+      });
 
       // 1. Router: pick a skill using a small structured-output call.
       const routerSchema = z.object({
@@ -384,7 +368,7 @@ export const handleGroupAgentRequest = internalAction({
         rationale: z.string(),
       });
       const { object: routed } = await generateObject({
-        model: google(CHAT_MODEL),
+        model,
         schema: routerSchema,
         system: [
           "You route queries inside a group chat to one of four Homie skills:",
@@ -407,23 +391,23 @@ export const handleGroupAgentRequest = internalAction({
           internal.groupChats.getMemberProfilesInternal,
           { groupChatId, askerId },
         )) as MemberProfile[];
-        result = await runFindHangout(members, query, googleKey);
+        result = await runFindHangout(members, query, model);
       } else if (skill === "pickMovie") {
         const members = (await ctx.runQuery(
           internal.groupChats.getMemberProfilesInternal,
           { groupChatId, askerId },
         )) as MemberProfile[];
-        result = await runPickMovie(members, query, googleKey);
+        result = await runPickMovie(members, query, model);
       } else if (skill === "scheduleEvent") {
         result = await runScheduleEvent(
           ctx,
           groupChatId,
           askerId,
           query,
-          googleKey,
+          model,
         );
       } else {
-        result = await runGeneral(ctx, askerId, query, googleKey);
+        result = await runGeneral(ctx, askerId, query, model);
       }
 
       await ctx.runMutation(

@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { api } from "@/convex/_generated/api"
 import { Doc, Id } from "@/convex/_generated/dataModel"
 import { useActiveUser } from "@/hooks/use-active-user"
+import { readActiveCredentials } from "@/hooks/use-local-ai-keys"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 import {
   CollapseButton,
@@ -258,10 +259,13 @@ export function DmPane() {
     }
 
     if (payload.mentionsHomie) {
+      const creds = readActiveCredentials()
       await askAgent({
         askerId: viewerId,
         otherId,
         query: payload.plainText,
+        llmProvider: creds?.provider,
+        llmApiKey: creds?.apiKey,
       })
       toast.success("Asking your agent privately")
       return

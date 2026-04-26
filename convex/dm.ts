@@ -525,8 +525,17 @@ export const askAgent = mutation({
     askerId: v.id("users"),
     otherId: v.id("users"),
     query: v.string(),
+    // BYOK credentials forwarded from the browser's localStorage. Both
+    // optional so non-prod env-var fallback still works.
+    llmProvider: v.optional(
+      v.union(v.literal("gemini"), v.literal("minimax")),
+    ),
+    llmApiKey: v.optional(v.string()),
   },
-  handler: async (ctx, { askerId, otherId, query }) => {
+  handler: async (
+    ctx,
+    { askerId, otherId, query, llmProvider, llmApiKey },
+  ) => {
     // Strip the mention token(s) before sending to the model so the agent
     // doesn't echo "you tagged me" and so both `@homie` and `@agent`
     // aliases work identically.
@@ -553,6 +562,8 @@ export const askAgent = mutation({
         responseId,
         askerId,
         query: cleaned,
+        llmProvider,
+        llmApiKey,
       },
     );
 

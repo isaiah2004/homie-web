@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { MessageCircle, History, Sparkles, Mic, MicOff, Menu, Trash2, Phone } from "lucide-react"
 import { toast } from "sonner"
 import type { PersistedPart } from "@/components/chat/tool-cards/types"
+import { readActiveCredentials } from "@/hooks/use-local-ai-keys"
 
 
 interface Message {
@@ -236,12 +237,42 @@ export default function Page() {
     } else {
       setIsChatThinking(true)
       try {
+        // BYOK: read the active key from this device's localStorage at send
+        // time (not at render) so an in-progress provider swap takes effect
+        // on the very next message.
+        const creds = readActiveCredentials()
         await generateAIResponse({
           conversationId: conversationId,
           userMessage: content,
+          llmProvider: creds?.provider,
+          llmApiKey: creds?.apiKey,
         })
       } catch (error) {
         console.error("Failed to generate AI response:", error)
+        // BYOK errors carry a `[BYOK_REQUIRED:<provider>]` prefix from
+        // convex/_lib/llmProvider.ts. Swap the generic toast for a CTA
+        // pointing at /dashboard/integrations so the user can fix it in one
+        // click instead of guessing at "an error occurred".
+        const msg = error instanceof Error ? error.message : String(error)
+        const byokMatch = /BYOK_REQUIRED:(gemini|minimax)/.exec(msg)
+        if (byokMatch) {
+          const provider = byokMatch[1]
+          toast.error(`Add your ${provider} API key`, {
+            description:
+              "Production runs on your own keys. Add one in Settings → Integrations.",
+            action: {
+              label: "Open settings",
+              onClick: () => {
+                window.location.href = "/dashboard/integrations"
+              },
+            },
+            duration: 8000,
+          })
+        } else {
+          toast.error("Couldn't generate a reply", {
+            description: msg.slice(0, 200),
+          })
+        }
       } finally {
         setIsChatThinking(false)
       }

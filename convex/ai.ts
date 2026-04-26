@@ -2,10 +2,10 @@
 import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { generateText, stepCountIs } from "ai";
 import type { Doc, Id } from "./_generated/dataModel";
 import { buildChatTools } from "./agentTools";
+import { resolveLlm } from "./_lib/llmProvider";
 
 // Part shape we persist on `conversationMessages.parts`. Mirrors the AI SDK
 // UIMessage shape closely enough that the client-side renderer can switch
@@ -30,8 +30,6 @@ type PersistedPart = {
 // new internal function. Currently we only read the `users` row (via the
 // existing `internal.users.getUserById` helper) and fall back to generic
 // placeholders when no business-specific signal is available.
-
-const CHAT_MODEL = "gemini-2.5-flash";
 
 // System prompt for personal-account users. This is the classic Homie voice —
 // a friendly, opinionated guide to the asker's friend graph AND provider-
@@ -118,16 +116,15 @@ export const generateAIResponse = action({
   args: {
     conversationId: v.id("conversations"),
     userMessage: v.string(),
-    apiKey: v.optional(v.string()),
+    // BYOK credentials forwarded from the browser. Both optional so
+    // preview/local can still fall back to env vars; on prod a missing key
+    // throws BYOKRequiredError which the client surfaces as a CTA.
+    llmProvider: v.optional(
+      v.union(v.literal("gemini"), v.literal("minimax")),
+    ),
+    llmApiKey: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<string> => {
-    const googleKey = args.apiKey || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    if (!googleKey) {
-      throw new Error(
-        "GOOGLE_GENERATIVE_AI_API_KEY environment variable is not set and no apiKey argument provided",
-      );
-    }
-
     const conversation: Doc<"conversations"> | null = await ctx.runQuery(
       api.conversations.getConversation,
       { conversationId: args.conversationId },
@@ -136,6 +133,11 @@ export const generateAIResponse = action({
       throw new Error(`Conversation ${args.conversationId} not found`);
     }
     const askerId = conversation.userId;
+
+    const { model } = resolveLlm({
+      provider: args.llmProvider,
+      apiKey: args.llmApiKey,
+    });
 
     // Resolve which system prompt to use. We default to "personal" any time
     // the account type can't be positively confirmed as "business" — this
@@ -183,8 +185,6 @@ export const generateAIResponse = action({
     }));
     chatHistory.push({ role: "user", content: args.userMessage });
 
-    const google = createGoogleGenerativeAI({ apiKey: googleKey });
-
     // Personal accounts get the friend-graph search + provider discovery
     // tools. Business accounts don't — there's no business-side "friends"
     // concept, and the personal tools would surface data the business
@@ -202,7 +202,7 @@ export const generateAIResponse = action({
     const pendingToolInputs = new Map<string, { name: string; input: string }>();
 
     const result = await generateText({
-      model: google(CHAT_MODEL),
+      model,
       system: systemPrompt,
       messages: chatHistory,
       tools,

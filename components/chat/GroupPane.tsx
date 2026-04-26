@@ -8,6 +8,7 @@ import { api } from "@/convex/_generated/api"
 import type { Doc, Id } from "@/convex/_generated/dataModel"
 import { useActiveUser } from "@/hooks/use-active-user"
 import { useIdentifiedMutation } from "@/hooks/use-identified"
+import { readActiveCredentials } from "@/hooks/use-local-ai-keys"
 import { PickDevUserEmptyState } from "@/components/dev/PickDevUserEmptyState"
 
 import { Badge } from "@/components/ui/badge"
@@ -413,10 +414,13 @@ function GroupThread({
   }) {
     if (payload.mentionsHomie) {
       try {
+        const creds = readActiveCredentials()
         await askGroupAgent({
           groupChatId,
           query: payload.plainText,
           replyMode,
+          llmProvider: creds?.provider,
+          llmApiKey: creds?.apiKey,
         })
         if (replyMode === "group") {
           toast.success("Asking Homie — reply will be posted to the group")
