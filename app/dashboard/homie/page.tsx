@@ -264,6 +264,17 @@ export default function Page() {
 
   const startNewVoiceCall = async () => {
     if (!convexUserId) return
+    // Voice calls are disabled on the prod deploy only — Vapi minutes get
+    // expensive when anyone on the internet can hammer them. Previews and
+    // local dev (where NEXT_PUBLIC_VERCEL_ENV !== "production") still work.
+    if (process.env.NEXT_PUBLIC_VERCEL_ENV === "production") {
+      toast.info("Voice chat is paused on prod", {
+        description:
+          "Voice calls are off on the public site to keep Vapi costs in check. Text chat works as normal; voice still works on local + preview builds.",
+        duration: 6000,
+      })
+      return
+    }
     try {
       const convId = await createConversation({
         userId: convexUserId,

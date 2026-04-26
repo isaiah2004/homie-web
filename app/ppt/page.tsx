@@ -3058,14 +3058,15 @@ function CloseSlide() {
         <h2
           style={{
             fontFamily: SERIF,
-            fontSize: "clamp(80px, 14vw, 220px)",
+            fontSize: "clamp(72px, 12vw, 200px)",
             lineHeight: 0.88,
             letterSpacing: "-0.04em",
             color: P.text,
           }}
         >
-          Make friends{" "}
-          <span style={{ color: P.primary, fontStyle: "italic" }}>again.</span>
+          the{" "}
+          <span style={{ color: P.primary, fontStyle: "italic" }}>true</span>{" "}
+          social network.
         </h2>
       </FadeUp>
       <FadeUp delay={0.8}>
