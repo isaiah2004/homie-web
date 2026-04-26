@@ -252,6 +252,71 @@ export const markRoomRead = mutation({
   },
 });
 
+function stripHtmlTags(html: string): string {
+  return html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export const sendRoomMessage = mutation({
+  args: {
+    devUserId: v.optional(v.id("users")),
+    eventId: v.id("events"),
+    content: v.string(),
+    format: v.union(
+      v.literal("plain"),
+      v.literal("markdown"),
+      v.literal("html"),
+    ),
+    attachmentIds: v.optional(v.array(v.id("attachments"))),
+    plainText: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const viewerId = await resolveViewerId(ctx, {
+      devUserId: args.devUserId,
+    });
+    await assertMembership(ctx, args.eventId, viewerId);
+
+    const event = await ctx.db.get(args.eventId);
+    if (!event) throw new Error("Event not found");
+    if (event.roomEnabled === false) {
+      throw new Error("This lobby is closed");
+    }
+
+    const rawContent = args.content ?? "";
+    const normalizedContent =
+      args.format === "html" ? rawContent : rawContent.trim();
+
+    const hasBody =
+      args.format === "html"
+        ? (args.plainText?.trim().length ?? 0) > 0 ||
+          stripHtmlTags(normalizedContent).length > 0
+        : normalizedContent.length > 0;
+    const hasAttachments = (args.attachmentIds?.length ?? 0) > 0;
+    if (!hasBody && !hasAttachments) {
+      throw new Error("Message cannot be empty");
+    }
+
+    if (args.attachmentIds && args.attachmentIds.length > 0) {
+      for (const aid of args.attachmentIds) {
+        const attachment = await ctx.db.get(aid);
+        if (!attachment) throw new Error("Attachment not found");
+        if (attachment.userId !== viewerId) {
+          throw new Error("Cannot attach someone else's file");
+        }
+      }
+    }
+
+    const messageId = await ctx.db.insert("eventRoomMessages", {
+      eventId: args.eventId,
+      from: viewerId,
+      content: normalizedContent,
+      format: args.format,
+      attachmentIds: args.attachmentIds,
+      sentAt: Date.now(),
+    });
+    return messageId;
+  },
+});
+
 export const addFriendFromRoom = mutation({
   args: {
     devUserId: v.optional(v.id("users")),
@@ -434,11 +499,39 @@ export const listRoomMessages = query({
     });
     await assertMembership(ctx, args.eventId, viewerId);
 
-    return await ctx.db
+    const result = await ctx.db
       .query("eventRoomMessages")
       .withIndex("by_event_and_sentAt", (q) => q.eq("eventId", args.eventId))
       .order("desc")
       .paginate(args.paginationOpts);
+
+    // Enrich each message with the sender's display info so the UI can
+    // render names/avatars without a second round-trip per row.
+    const senderIds = Array.from(
+      new Set(result.page.map((m) => m.from as string)),
+    );
+    const senderMap = new Map<
+      string,
+      { _id: Id<"users">; name: string; username: string | null; avatar: string | null }
+    >();
+    for (const id of senderIds) {
+      const user = await ctx.db.get(id as Id<"users">);
+      if (user) {
+        senderMap.set(id, {
+          _id: user._id,
+          name: user.name,
+          username: user.username ?? null,
+          avatar: user.avatar ?? null,
+        });
+      }
+    }
+    return {
+      ...result,
+      page: result.page.map((m) => ({
+        message: m,
+        sender: senderMap.get(m.from as string) ?? null,
+      })),
+    };
   },
 });
 
