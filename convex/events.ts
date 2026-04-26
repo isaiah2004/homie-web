@@ -63,6 +63,16 @@ async function canViewEvent(
   viewerId: Id<"users">,
 ): Promise<boolean> {
   if (event.createdBy === viewerId) return true;
+  // Lobby members can always read the event doc — without this widening,
+  // a non-friend who joined the lobby via a share link would crash on
+  // /dashboard/events/{id}/lobby because `getEventForViewer` would 404.
+  const lobbyMembership = await ctx.db
+    .query("eventRoomMembers")
+    .withIndex("by_event_and_user", (q) =>
+      q.eq("eventId", event._id).eq("userId", viewerId),
+    )
+    .unique();
+  if (lobbyMembership) return true;
   if (event.visibility === "public") return true;
   if (event.visibility === "friends") {
     return await isAcceptedFriend(ctx, event.createdBy, viewerId);
@@ -131,6 +141,7 @@ export const createEvent = mutation({
         );
       }
     }
+    const now = Date.now();
     const id = await ctx.db.insert("events", {
       createdBy: viewerId,
       name,
@@ -146,7 +157,18 @@ export const createEvent = mutation({
       coverImageUrl: args.coverImageUrl,
       communityId: args.communityId,
       status: "scheduled",
-      createdAt: Date.now(),
+      createdAt: now,
+      roomEnabled: true,
+      roomMemberCount: 1,
+    });
+    // Seed the creator as the lobby host so they don't have to join their
+    // own event.
+    await ctx.db.insert("eventRoomMembers", {
+      eventId: id,
+      userId: viewerId,
+      role: "host",
+      joinedAt: now,
+      lastReadAt: now,
     });
     return id;
   },
@@ -415,7 +437,10 @@ export const cancelEvent = mutation({
       throw new Error("Only the creator can cancel this event");
     }
     if (event.status === "cancelled") return;
-    await ctx.db.patch(args.eventId, { status: "cancelled" });
+    await ctx.db.patch(args.eventId, {
+      status: "cancelled",
+      roomEnabled: false,
+    });
 
     const invites = await ctx.db
       .query("eventInvites")
@@ -675,7 +700,8 @@ export const createEventInternal = internalMutation({
     ) {
       throw new Error("endsAt cannot be before startsAt");
     }
-    return await ctx.db.insert("events", {
+    const now = Date.now();
+    const id = await ctx.db.insert("events", {
       createdBy: args.creatorId,
       name,
       description: args.description,
@@ -690,7 +716,17 @@ export const createEventInternal = internalMutation({
       coverImageUrl: args.coverImageUrl,
       groupChatRef: args.groupChatRef,
       status: "scheduled",
-      createdAt: Date.now(),
+      createdAt: now,
+      roomEnabled: true,
+      roomMemberCount: 1,
     });
+    await ctx.db.insert("eventRoomMembers", {
+      eventId: id,
+      userId: args.creatorId,
+      role: "host",
+      joinedAt: now,
+      lastReadAt: now,
+    });
+    return id;
   },
 });
