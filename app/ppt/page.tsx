@@ -1,6 +1,17 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  forceCollide,
+  forceLink,
+  forceManyBody,
+  forceSimulation,
+  forceX,
+  forceY,
+  type Simulation,
+  type SimulationLinkDatum,
+  type SimulationNodeDatum,
+} from "d3-force"
 
 const P = {
   bg: "#F4EADB",
@@ -870,38 +881,69 @@ type PGPerson = {
   id: string
   label: string
   color: string
-  state1: [number, number]  // spread layout (mirrors original SocialLattice)
-  venn: [number, number]    // states 2 + 3
-  irlZone: 0 | 1 | 2        // state 4: 0 cafe, 1 open mic, 2 run club
-  irlOffset: [number, number]  // offset within zone
-  spawnDelay: number  // seconds, for state 1 stagger
+  vennCluster: 0 | 1 | 2  // 0 = gaming, 1 = sports, 2 = music
+  irlZone: 0 | 1 | 2      // state 4 cluster: 0 cafe, 1 open mic, 2 run club
+  spawnDelay: number      // seconds, for state 1 stagger
 }
 
-// State 1 positions mirror the original SocialLattice's spread (800-wide layout
-// centered in our 1200-wide viewBox: x_new = x_orig + 200). YOU sits at center.
-// irlOffset is relative to event-zone center (z.x, z.y=380); zones span y=150..450.
 const PG_PEOPLE_2: PGPerson[] = [
-  { id: "ma", label: "MA", color: "#A8C5B0", state1: [400, 165], venn: [340, 230], irlZone: 0, irlOffset: [-55, -55], spawnDelay: 0.4 },
-  { id: "jo", label: "JO", color: "#E8B784", state1: [800, 165], venn: [880, 230], irlZone: 1, irlOffset: [-55, -55], spawnDelay: 0.7 },
-  { id: "sa", label: "SA", color: "#A5B5D4", state1: [560, 100], venn: [800, 320], irlZone: 1, irlOffset: [55, -30], spawnDelay: 1.0 },
-  { id: "pr", label: "PR", color: "#D4A5A5", state1: [375, 385], venn: [600, 250], irlZone: 0, irlOffset: [55, -30], spawnDelay: 1.3 },
-  { id: "al", label: "AL", color: "#C5A5D4", state1: [825, 385], venn: [560, 470], irlZone: 2, irlOffset: [-50, -40], spawnDelay: 1.6 },
-  { id: "ri", label: "RI", color: "#D4C5A5", state1: [640, 500], venn: [470, 380], irlZone: 2, irlOffset: [40, 35], spawnDelay: 1.9 },
-  { id: "ta", label: "TA", color: "#9FBFA1", state1: [265, 290], venn: [380, 350], irlZone: 0, irlOffset: [0, 30], spawnDelay: 2.2 },
-  { id: "lu", label: "LU", color: "#E0A892", state1: [935, 290], venn: [720, 410], irlZone: 1, irlOffset: [0, 30], spawnDelay: 2.5 },
+  { id: "ma", label: "MA", color: "#A8C5B0", vennCluster: 0, irlZone: 0, spawnDelay: 0.0 },
+  { id: "jo", label: "JO", color: "#E8B784", vennCluster: 1, irlZone: 1, spawnDelay: 0.3 },
+  { id: "sa", label: "SA", color: "#A5B5D4", vennCluster: 1, irlZone: 1, spawnDelay: 0.6 },
+  { id: "pr", label: "PR", color: "#D4A5A5", vennCluster: 0, irlZone: 0, spawnDelay: 0.9 },
+  { id: "al", label: "AL", color: "#C5A5D4", vennCluster: 2, irlZone: 2, spawnDelay: 1.2 },
+  { id: "ri", label: "RI", color: "#D4C5A5", vennCluster: 2, irlZone: 2, spawnDelay: 1.5 },
+  { id: "ta", label: "TA", color: "#9FBFA1", vennCluster: 0, irlZone: 0, spawnDelay: 1.8 },
+  { id: "lu", label: "LU", color: "#E0A892", vennCluster: 2, irlZone: 1, spawnDelay: 2.1 },
+  { id: "ne", label: "NE", color: "#B5A5D4", vennCluster: 0, irlZone: 1, spawnDelay: 2.4 },
+  { id: "em", label: "EM", color: "#D4B5A5", vennCluster: 1, irlZone: 0, spawnDelay: 2.7 },
+  { id: "vi", label: "VI", color: "#A5D4C5", vennCluster: 2, irlZone: 2, spawnDelay: 3.0 },
+  { id: "kr", label: "KR", color: "#E8A5C5", vennCluster: 0, irlZone: 0, spawnDelay: 3.3 },
+  { id: "an", label: "AN", color: "#C5E8A5", vennCluster: 1, irlZone: 2, spawnDelay: 3.6 },
+  { id: "di", label: "DI", color: "#A5C5E8", vennCluster: 2, irlZone: 1, spawnDelay: 3.9 },
 ]
 
 type PGInterest = { id: string; mark: string; x: number; y: number; spawnDelay: number }
 
-// Interest positions also mirror the original lattice's spread.
+// Interest positions are anchors — the simulation pulls each interest back
+// toward its spawn point, but lets it drift with the wobble + person springs.
 const PG_INTERESTS_2: PGInterest[] = [
-  { id: "music", mark: "♫", x: 480, y: 75,  spawnDelay: 3.0 },
-  { id: "film",  mark: "▶", x: 680, y: 75,  spawnDelay: 3.15 },
-  { id: "book",  mark: "❡", x: 485, y: 235, spawnDelay: 3.3 },
-  { id: "game",  mark: "✦", x: 725, y: 235, spawnDelay: 3.45 },
-  { id: "anime", mark: "✿", x: 490, y: 540, spawnDelay: 3.6 },
-  { id: "sport", mark: "⚽", x: 715, y: 540, spawnDelay: 3.75 },
+  { id: "music",  mark: "♫", x: 480, y: 75,  spawnDelay: 3.0 },
+  { id: "film",   mark: "▶", x: 680, y: 75,  spawnDelay: 3.15 },
+  { id: "book",   mark: "❡", x: 485, y: 235, spawnDelay: 3.3 },
+  { id: "game",   mark: "✦", x: 725, y: 235, spawnDelay: 3.45 },
+  { id: "anime",  mark: "✿", x: 490, y: 540, spawnDelay: 3.6 },
+  { id: "sport",  mark: "⚽", x: 715, y: 540, spawnDelay: 3.75 },
+  { id: "art",    mark: "✎", x: 250, y: 175, spawnDelay: 3.9 },
+  { id: "food",   mark: "✦", x: 950, y: 175, spawnDelay: 4.05 },
+  { id: "travel", mark: "✈", x: 250, y: 425, spawnDelay: 4.2 },
+  { id: "tech",   mark: "⌬", x: 950, y: 425, spawnDelay: 4.35 },
 ]
+
+// Each interest is shared by at least 2 people. Some people appear in
+// multiple interests, mirroring the way taste actually clusters.
+const PG_INTEREST_PEOPLE: Record<string, string[]> = {
+  music:  ["ma", "jo"],
+  film:   ["sa", "pr"],
+  book:   ["al", "ri"],
+  game:   ["ta", "lu"],
+  anime:  ["ne", "em"],
+  sport:  ["vi", "kr"],
+  art:    ["an", "di", "ma"],
+  food:   ["jo", "sa", "vi"],
+  travel: ["pr", "al", "kr"],
+  tech:   ["ri", "lu", "ta"],
+}
+
+// Flattened [personId, interestId] pairs — used both as sim links and as
+// keys for line refs.
+const PG_PERSON_INTEREST_PAIRS: Array<[string, string]> = (() => {
+  const out: Array<[string, string]> = []
+  for (const [iid, pids] of Object.entries(PG_INTEREST_PEOPLE)) {
+    for (const pid of pids) out.push([pid, iid])
+  }
+  return out
+})()
 
 const PG_VENN_2 = [
   { x: 360, y: 280, r: 200, mark: "🎮", label: "gaming",  fill: "#C5A5D4" },
@@ -916,28 +958,41 @@ const PG_EVENTS_2 = [
 ]
 
 const PG_BUSINESSES_2 = [
-  { x: 80,           y: 80,           label: "Decathlon",   target: PG_VENN_2[1] },
-  { x: PG_VB_W - 80, y: 80,           label: "PlayStation", target: PG_VENN_2[0] },
-  { x: PG_VB_W - 80, y: PG_VB_H - 60, label: "Spotify",     target: PG_VENN_2[2] },
+  { x: 80,           y: 80,           label: "Adidas",      icon: "/images/icons/adidas.png",              target: PG_VENN_2[1] },
+  { x: PG_VB_W - 80, y: 80,           label: "PlayStation", icon: "/images/icons/playstation-logotype.png", target: PG_VENN_2[0] },
+  { x: PG_VB_W - 80, y: PG_VB_H - 60, label: "Spotify",     icon: "/images/icons/spotify.png",             target: PG_VENN_2[2] },
 ]
 
+// Real social-media artifact screenshots — used as the "posts/reels/feeds"
+// orbiting YOU in state 0, before being deleted. Phone-aspect ratios kept.
 const PG_POSTS_2 = [
-  { mark: "▶", angle: 0 },
-  { mark: "♥", angle: 60 },
-  { mark: "↻", angle: 120 },
-  { mark: "★", angle: 180 },
-  { mark: "💬", angle: 240 },
-  { mark: "📷", angle: 300 },
+  { src: "/images/social-media-artifacts/Screenshot 2026-04-26 053637.png", angle: 0 },
+  { src: "/images/social-media-artifacts/Screenshot 2026-04-26 053718.png", angle: 72 },
+  { src: "/images/social-media-artifacts/Screenshot 2026-04-26 053753.png", angle: 144 },
+  { src: "/images/social-media-artifacts/Screenshot 2026-04-26 053820.png", angle: 216 },
+  { src: "/images/social-media-artifacts/Screenshot 2026-04-26 053905.png", angle: 288 },
 ]
 
-function personPosFor(p: PGPerson, state: number): [number, number] {
-  if (state <= 1) return p.state1
-  if (state === 2 || state === 3) return p.venn
-  // state 4: IRL zones — offset is relative to zone center (z.x, z.y=380).
-  // zone bounds: y=150..450, so offsets must keep y in roughly [180, 420].
-  const z = PG_EVENTS_2[p.irlZone]
-  return [z.x + p.irlOffset[0], z.y + p.irlOffset[1]]
+/* d3-force types + helpers ---------------------------------------- */
+
+type SimNode = SimulationNodeDatum & {
+  id: string
+  kind: "you" | "person" | "interest"
+  isYou?: boolean
+  label?: string
+  color?: string
+  mark?: string
+  vennCluster?: 0 | 1 | 2
+  irlZone?: 0 | 1 | 2
+  spawnDelay?: number
 }
+
+type SimEdge = SimulationLinkDatum<SimNode>
+
+// (Custom forces removed — we use d3's built-in forceX/forceY for cluster
+// and anchor behavior, and the simulation's natural alphaTarget for the
+// "always alive" feel. Simpler and far more performant than the previous
+// custom drift force.)
 
 function ProblemGraphSlide({ subIdx }: { subIdx: number }) {
   const state = Math.max(0, Math.min(PROBLEM_STATES.length - 1, subIdx + 1))
@@ -1015,11 +1070,401 @@ function ProblemGraph({ state }: { state: number }) {
   const showCenterYou = state === 0
   const showPosts = state === 0
 
+  /* d3-force simulation — imperative DOM updates via refs (no setState per
+     tick), so the React tree only re-renders on state change. ------------ */
+
+  const simRef = useRef<Simulation<SimNode, SimEdge> | null>(null)
+  const nodesRef = useRef<SimNode[]>([])
+  const edgesRef = useRef<SimEdge[]>([])
+  const svgRef = useRef<SVGSVGElement>(null)
+  const dragRef = useRef<{ id: string } | null>(null)
+  // Refs to the SVG elements that the tick handler updates imperatively.
+  const nodeGroupRefs = useRef(new Map<string, SVGGElement>())
+  const spineLineRefs = useRef(new Map<string, SVGLineElement>())
+  // Thread lines keyed by `${personId}|${interestId}` since one person may
+  // be linked to multiple interests.
+  const threadLineRefs = useRef(new Map<string, SVGLineElement>())
+  // Camera (auto-zoom) — wrapper <g> transform that lerps to fit nodes.
+  const cameraGroupRef = useRef<SVGGElement>(null)
+  const cameraRef = useRef({ x: 0, y: 0, scale: 1 })
+
+  // Initialize the simulation once. YO is pinned at viewBox centre via fx/fy.
+  // The tick handler writes positions DIRECTLY to the SVG via refs — no React
+  // re-render per frame, no jitter from React reconciliation.
+  useEffect(() => {
+    const yo: SimNode = {
+      id: "yo",
+      kind: "you",
+      isYou: true,
+      x: PG_CX,
+      y: PG_CY,
+      fx: PG_CX,
+      fy: PG_CY,
+    }
+    const people: SimNode[] = PG_PEOPLE_2.map((p) => ({
+      id: p.id,
+      kind: "person",
+      label: p.label,
+      color: p.color,
+      vennCluster: p.vennCluster,
+      irlZone: p.irlZone,
+      spawnDelay: p.spawnDelay,
+      x: PG_CX + (Math.random() - 0.5) * 60,
+      y: PG_CY + (Math.random() - 0.5) * 60,
+    }))
+    const interests: SimNode[] = PG_INTERESTS_2.map((it) => ({
+      id: it.id,
+      kind: "interest",
+      mark: it.mark,
+      x: it.x + (Math.random() - 0.5) * 30,
+      y: it.y + (Math.random() - 0.5) * 30,
+    }))
+    nodesRef.current = [yo, ...people, ...interests]
+
+    // Edges: each person → YO, plus the explicit person↔interest pairs
+    // (each interest has ≥2 people).
+    const personYoLinks: SimEdge[] = people.map((p) => ({
+      source: p.id,
+      target: "yo",
+    }))
+    const personInterestLinks: SimEdge[] = PG_PERSON_INTEREST_PAIRS.map(
+      ([pid, iid]) => ({ source: pid, target: iid }),
+    )
+    edgesRef.current = [...personYoLinks, ...personInterestLinks]
+
+    // Anchor each interest near its declared position (gentle pull). This
+    // is much cheaper than the old custom force.
+    const interestHomeX = (n: SimNode) =>
+      n.kind === "interest"
+        ? PG_INTERESTS_2.find((it) => it.id === n.id)?.x ?? PG_CX
+        : PG_CX
+    const interestHomeY = (n: SimNode) =>
+      n.kind === "interest"
+        ? PG_INTERESTS_2.find((it) => it.id === n.id)?.y ?? PG_CY
+        : PG_CY
+
+    const sim = forceSimulation<SimNode, SimEdge>(nodesRef.current)
+      .force(
+        "link",
+        forceLink<SimNode, SimEdge>(edgesRef.current)
+          .id((n) => (n as SimNode).id)
+          .distance((l) => {
+            const tgt = l.target as SimNode
+            return tgt.id === "yo" ? 200 : 110
+          })
+          .strength(0.35),
+      )
+      .force(
+        "charge",
+        forceManyBody<SimNode>().strength((n) =>
+          (n as SimNode).kind === "interest" ? -150 : -300,
+        ),
+      )
+      .force(
+        "collide",
+        forceCollide<SimNode>((n) =>
+          (n as SimNode).kind === "interest" ? 28 : 38,
+        ),
+      )
+      .force(
+        "interest-x",
+        forceX<SimNode>(interestHomeX).strength((n) =>
+          n.kind === "interest" ? 0.06 : 0,
+        ),
+      )
+      .force(
+        "interest-y",
+        forceY<SimNode>(interestHomeY).strength((n) =>
+          n.kind === "interest" ? 0.06 : 0,
+        ),
+      )
+      // d3 defaults are good. alphaTarget = small constant keeps the sim
+      // gently alive — every node still wobbles a touch from spring tension
+      // never quite reaching equilibrium.
+      .velocityDecay(0.42)
+      .alphaDecay(0.02)
+      .alphaMin(0.001)
+      .alphaTarget(0.04)
+      .on("tick", tickHandler)
+
+    simRef.current = sim
+    return () => {
+      sim.stop()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Imperative tick handler — runs every frame, writes transforms directly
+  // to the captured SVG element refs. Bypasses React reconciliation.
+  function tickHandler() {
+    // Build a quick id→node lookup once per tick (faster than .find per item).
+    const byId = new Map<string, SimNode>()
+    for (const n of nodesRef.current) byId.set(n.id, n)
+
+    // Update node group transforms.
+    for (const n of nodesRef.current) {
+      const el = nodeGroupRefs.current.get(n.id)
+      if (el) {
+        el.setAttribute("transform", `translate(${n.x ?? 0},${n.y ?? 0})`)
+      }
+    }
+
+    // Update spine lines (person → YO).
+    for (const p of PG_PEOPLE_2) {
+      const pn = byId.get(p.id)
+      if (!pn) continue
+      const spine = spineLineRefs.current.get(p.id)
+      if (spine) {
+        spine.setAttribute("x1", String(pn.x ?? 0))
+        spine.setAttribute("y1", String(pn.y ?? 0))
+      }
+    }
+
+    // Update thread lines (person → interest), one per pair.
+    for (const [pid, iid] of PG_PERSON_INTEREST_PAIRS) {
+      const pn = byId.get(pid)
+      const ni = byId.get(iid)
+      const thread = threadLineRefs.current.get(`${pid}|${iid}`)
+      if (thread && pn && ni) {
+        thread.setAttribute("x1", String(pn.x ?? 0))
+        thread.setAttribute("y1", String(pn.y ?? 0))
+        thread.setAttribute("x2", String(ni.x ?? 0))
+        thread.setAttribute("y2", String(ni.y ?? 0))
+      }
+    }
+
+    // Auto-zoom: lerp camera transform toward the bounding box of nodes.
+    updateCamera(byId)
+  }
+
+  // Compute target camera transform from node bbox + lerp current toward it.
+  function updateCamera(byId: Map<string, SimNode>) {
+    let minX = Infinity
+    let minY = Infinity
+    let maxX = -Infinity
+    let maxY = -Infinity
+    for (const n of nodesRef.current) {
+      if (n.x == null || n.y == null) continue
+      if (n.x < minX) minX = n.x
+      if (n.y < minY) minY = n.y
+      if (n.x > maxX) maxX = n.x
+      if (n.y > maxY) maxY = n.y
+    }
+    if (!isFinite(minX)) return
+
+    // Pad the bbox so nodes have breathing room from the viewport edge.
+    const pad = 80
+    minX -= pad
+    minY -= pad
+    maxX += pad
+    maxY += pad
+    const bw = Math.max(1, maxX - minX)
+    const bh = Math.max(1, maxY - minY)
+    const targetScale = Math.min(PG_VB_W / bw, PG_VB_H / bh, 1)
+    const bcx = (minX + maxX) / 2
+    const bcy = (minY + maxY) / 2
+    const targetX = PG_VB_W / 2 - bcx * targetScale
+    const targetY = PG_VB_H / 2 - bcy * targetScale
+
+    // Smooth lerp so the camera never snaps.
+    const cam = cameraRef.current
+    const k = 0.04
+    cam.x += (targetX - cam.x) * k
+    cam.y += (targetY - cam.y) * k
+    cam.scale += (targetScale - cam.scale) * k
+
+    const g = cameraGroupRef.current
+    if (g) {
+      g.setAttribute(
+        "transform",
+        `translate(${cam.x.toFixed(2)},${cam.y.toFixed(2)}) scale(${cam.scale.toFixed(4)})`,
+      )
+    }
+    // Suppress unused-arg lint when byId arg goes unused in future tweaks.
+    void byId
+  }
+
+  // Re-target forces on each state change. Uses d3's built-in forceX/forceY
+  // for cluster behavior — fast, well-tested, no custom code.
+  useEffect(() => {
+    const sim = simRef.current
+    if (!sim) return
+    // Always clear previous cluster forces first.
+    sim.force("cluster-x", null)
+    sim.force("cluster-y", null)
+
+    if (state === 0) {
+      sim.alpha(0).stop()
+      return
+    }
+
+    if (state === 1) {
+      // Lattice radiates from YO. Default link/charge from init are good.
+      sim
+        .force(
+          "link",
+          forceLink<SimNode, SimEdge>(edgesRef.current)
+            .id((n) => (n as SimNode).id)
+            .distance((l) => {
+              const tgt = l.target as SimNode
+              return tgt.id === "yo" ? 200 : 110
+            })
+            .strength(0.35),
+        )
+        .force(
+          "charge",
+          forceManyBody<SimNode>().strength((n) =>
+            (n as SimNode).kind === "interest" ? -150 : -300,
+          ),
+        )
+    } else if (state === 2 || state === 3) {
+      // People cluster into their Venn region; YO link relaxes a little.
+      sim
+        .force(
+          "link",
+          forceLink<SimNode, SimEdge>(edgesRef.current)
+            .id((n) => (n as SimNode).id)
+            .distance((l) => {
+              const tgt = l.target as SimNode
+              return tgt.id === "yo" ? 230 : 130
+            })
+            .strength(0.1),
+        )
+        .force(
+          "charge",
+          forceManyBody<SimNode>().strength((n) =>
+            (n as SimNode).kind === "interest" ? -90 : -180,
+          ),
+        )
+        .force(
+          "cluster-x",
+          forceX<SimNode>((n) =>
+            n.kind === "person" && n.vennCluster != null
+              ? PG_VENN_2[n.vennCluster].x
+              : 0,
+          ).strength((n) =>
+            n.kind === "person" && n.vennCluster != null ? 0.18 : 0,
+          ),
+        )
+        .force(
+          "cluster-y",
+          forceY<SimNode>((n) =>
+            n.kind === "person" && n.vennCluster != null
+              ? PG_VENN_2[n.vennCluster].y
+              : 0,
+          ).strength((n) =>
+            n.kind === "person" && n.vennCluster != null ? 0.18 : 0,
+          ),
+        )
+    } else if (state === 4) {
+      // People drag into IRL event zones; drop the YO links so they're free.
+      sim
+        .force(
+          "link",
+          forceLink<SimNode, SimEdge>([]).id((n) => (n as SimNode).id),
+        )
+        .force(
+          "charge",
+          forceManyBody<SimNode>().strength((n) =>
+            (n as SimNode).kind === "interest" ? -70 : -160,
+          ),
+        )
+        .force(
+          "cluster-x",
+          forceX<SimNode>((n) =>
+            n.kind === "person" && n.irlZone != null
+              ? PG_EVENTS_2[n.irlZone].x
+              : 0,
+          ).strength((n) =>
+            n.kind === "person" && n.irlZone != null ? 0.25 : 0,
+          ),
+        )
+        .force(
+          "cluster-y",
+          forceY<SimNode>((n) =>
+            n.kind === "person" && n.irlZone != null
+              ? PG_EVENTS_2[n.irlZone].y
+              : 0,
+          ).strength((n) =>
+            n.kind === "person" && n.irlZone != null ? 0.25 : 0,
+          ),
+        )
+    }
+
+    sim.alpha(0.6).restart()
+  }, [state])
+
+  function getNode(id: string): SimNode | undefined {
+    return nodesRef.current.find((n) => n.id === id)
+  }
+
+  function clientToSVG(
+    clientX: number,
+    clientY: number,
+  ): [number, number] | null {
+    const svg = svgRef.current
+    if (!svg) return null
+    const pt = svg.createSVGPoint()
+    pt.x = clientX
+    pt.y = clientY
+    const ctm = svg.getScreenCTM()
+    if (!ctm) return null
+    const tr = pt.matrixTransform(ctm.inverse())
+    return [tr.x, tr.y]
+  }
+
+  function onPointerDown(
+    e: React.PointerEvent<SVGGElement>,
+    id: string,
+  ) {
+    const node = getNode(id)
+    if (!node || node.isYou) return
+    const pt = clientToSVG(e.clientX, e.clientY)
+    if (!pt) return
+    dragRef.current = { id }
+    e.currentTarget.setPointerCapture(e.pointerId)
+    node.fx = pt[0]
+    node.fy = pt[1]
+    simRef.current?.alphaTarget(0.3).restart()
+  }
+  function onPointerMove(e: React.PointerEvent<SVGGElement>) {
+    if (!dragRef.current) return
+    const node = getNode(dragRef.current.id)
+    if (!node) return
+    const pt = clientToSVG(e.clientX, e.clientY)
+    if (!pt) return
+    node.fx = pt[0]
+    node.fy = pt[1]
+  }
+  function onPointerUp() {
+    if (!dragRef.current) return
+    const node = getNode(dragRef.current.id)
+    if (node) {
+      node.fx = null
+      node.fy = null
+    }
+    dragRef.current = null
+    simRef.current?.alphaTarget(0)
+  }
+
+  const yoOpacity = state === 4 ? 0 : showPeople ? 1 : 0
+
+  // Initial seed positions used only for first paint; the tick handler then
+  // updates the DOM directly via refs.
+  function initialPos(id: string): [number, number] {
+    const n = getNode(id)
+    return [n?.x ?? PG_CX, n?.y ?? PG_CY]
+  }
+
   return (
     <svg
+      ref={svgRef}
       viewBox={`0 0 ${PG_VB_W} ${PG_VB_H}`}
       className="absolute inset-0 h-full w-full"
       preserveAspectRatio="xMidYMid meet"
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerLeave={onPointerUp}
     >
       <defs>
         <radialGradient id="pg2-you-grad" cx="0.4" cy="0.4">
@@ -1048,8 +1493,16 @@ function ProblemGraph({ state }: { state: number }) {
             0%, 100% { opacity: 0.25; }
             50%      { opacity: 0.55; }
           }
+          @keyframes pg-spawn-fade {
+            0%   { opacity: 0; }
+            100% { opacity: 1; }
+          }
         `}</style>
       </defs>
+
+      {/* CAMERA — wraps everything that should auto-zoom-to-fit. The transform
+          is updated each tick by updateCamera() to keep all nodes visible. */}
+      <g ref={cameraGroupRef}>
 
       {/* Venn regions (states 2 + 3). Music label sits BELOW its circle so it
           doesn't collide with the centered YO node. */}
@@ -1143,7 +1596,7 @@ function ProblemGraph({ state }: { state: number }) {
         ))}
       </g>
 
-      {/* Connecting lines (state 1: draw-in then pulse orange; states 2-3 dimmed; state 4 hidden) */}
+      {/* Spine lines — person → YO. Endpoints written imperatively. */}
       <g
         style={{
           opacity: showInterests ? (interestsDim ? 0.35 : 1) : 0,
@@ -1152,155 +1605,155 @@ function ProblemGraph({ state }: { state: number }) {
       >
         {showPeople &&
           PG_PEOPLE_2.map((p, idx) => {
-            const [px, py] = personPosFor(p, state)
-            const it = PG_INTERESTS_2[idx % PG_INTERESTS_2.length]
-            const pulseDelay = (idx * 0.18).toFixed(2)
+            const [px, py] = initialPos(p.id)
+            const pulseDelay = (idx * 0.13).toFixed(2)
             return (
-              <g key={`threads-${p.id}`}>
-                {/* person → YO (the lattice spine) */}
-                <line
-                  x1={px}
-                  y1={py}
-                  x2={PG_CX}
-                  y2={PG_CY}
-                  stroke={P.primary}
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  style={{
-                    transition: "x1 0.95s cubic-bezier(0.32,0.72,0,1), y1 0.95s cubic-bezier(0.32,0.72,0,1)",
-                    animation:
-                      state === 1
-                        ? `pg2-line-draw 1.4s ${3.5 + idx * 0.05}s ease-out both, pg2-line-pulse 2.2s ${5 + Number(pulseDelay)}s ease-in-out infinite`
-                        : `pg2-line-pulse 2.4s ${pulseDelay}s ease-in-out infinite`,
-                  }}
-                />
-                {/* person → interest */}
-                <line
-                  x1={px}
-                  y1={py}
-                  x2={it.x}
-                  y2={it.y}
-                  stroke={P.primary}
-                  strokeOpacity={0.5}
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeDasharray="4 5"
-                  style={{
-                    transition: "x1 0.95s cubic-bezier(0.32,0.72,0,1), y1 0.95s cubic-bezier(0.32,0.72,0,1)",
-                    animation:
-                      state === 1
-                        ? `pg2-line-draw 1.5s ${3.7 + idx * 0.05}s ease-out both, pg2-line-pulse 2.4s ${5.2 + Number(pulseDelay)}s ease-in-out infinite`
-                        : `pg2-line-pulse 2.6s ${pulseDelay + 0.3}s ease-in-out infinite`,
-                  }}
-                />
-              </g>
+              <line
+                key={`spine-${p.id}`}
+                ref={(el) => {
+                  if (el) spineLineRefs.current.set(p.id, el)
+                }}
+                x1={px}
+                y1={py}
+                x2={PG_CX}
+                y2={PG_CY}
+                stroke={P.primary}
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                style={{
+                  animation: `pg2-line-pulse 2.4s ${pulseDelay}s ease-in-out infinite`,
+                }}
+              />
             )
           })}
       </g>
 
-      {/* Interest nodes (mounted state 1+, dimmed in 2-3, hidden in 4) */}
+      {/* Thread lines — person → interest, one per (person, interest) pair. */}
+      <g
+        style={{
+          opacity: showInterests ? (interestsDim ? 0.35 : 1) : 0,
+          transition: "opacity 0.6s ease",
+        }}
+      >
+        {showPeople &&
+          PG_PERSON_INTEREST_PAIRS.map(([pid, iid], idx) => {
+            const [px, py] = initialPos(pid)
+            const [ix, iy] = initialPos(iid)
+            const pulseDelay = (idx * 0.11 + 0.3).toFixed(2)
+            return (
+              <line
+                key={`thread-${pid}-${iid}`}
+                ref={(el) => {
+                  if (el) threadLineRefs.current.set(`${pid}|${iid}`, el)
+                }}
+                x1={px}
+                y1={py}
+                x2={ix}
+                y2={iy}
+                stroke={P.success}
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                style={{
+                  animation: `pg2-line-pulse 2.6s ${pulseDelay}s ease-in-out infinite`,
+                }}
+              />
+            )
+          })}
+      </g>
+
+      {/* Interest nodes — transforms updated imperatively by tickHandler. */}
       {showPeople &&
-        PG_INTERESTS_2.map((it) => (
-          <g
-            key={it.id}
-            transform={`translate(${it.x}, ${it.y})`}
-            style={{
-              opacity: showInterests ? (interestsDim ? 0.3 : 1) : 0,
-              transition: "opacity 0.6s ease",
-            }}
-          >
+        PG_INTERESTS_2.map((it) => {
+          const [ix, iy] = initialPos(it.id)
+          return (
             <g
+              key={it.id}
+              ref={(el) => {
+                if (el) nodeGroupRefs.current.set(it.id, el)
+              }}
+              transform={`translate(${ix},${iy})`}
+              onPointerDown={(e) => onPointerDown(e, it.id)}
               style={{
-                animation:
-                  state === 1
-                    ? `pg2-spawn 0.55s ${it.spawnDelay}s ease-out both`
-                    : undefined,
-                transformOrigin: "center",
+                opacity: showInterests ? (interestsDim ? 0.3 : 1) : 0,
+                transition: "opacity 0.6s ease",
+                cursor: "grab",
+                touchAction: "none",
               }}
             >
-              <circle r="16" fill={P.elevated} stroke={P.primary} strokeWidth="1.6" />
+              <circle r="22" fill={P.elevated} stroke={P.success} strokeWidth="2" />
               <text
                 textAnchor="middle"
                 dominantBaseline="central"
-                fontSize="16"
-                fill={P.primary}
+                fontSize="22"
+                fill={P.success}
+                style={{ pointerEvents: "none", userSelect: "none" }}
               >
                 {it.mark}
               </text>
             </g>
-          </g>
-        ))}
+          )
+        })}
 
-      {/* YO node — center of the lattice for states 1+ (mirrors original SocialLattice) */}
-      {showPeople && (
-        <g
-          transform={`translate(${PG_CX}, ${PG_CY})`}
-          style={{
-            opacity: state === 4 ? 0 : 1,
-            transition: "opacity 0.6s ease",
-          }}
+      {/* YO node — pinned, no ref needed (transform never changes). */}
+      <g
+        transform={`translate(${PG_CX},${PG_CY})`}
+        style={{
+          opacity: yoOpacity,
+          transition: "opacity 0.6s ease",
+        }}
+      >
+        <circle r="46" fill="url(#pg2-you-grad)" filter="url(#pg2-glow)" />
+        <text
+          textAnchor="middle"
+          dominantBaseline="central"
+          fontSize="17"
+          fontWeight={700}
+          fill="white"
+          style={{ pointerEvents: "none", userSelect: "none" }}
         >
-          <g
-            style={{
-              animation:
-                state === 1
-                  ? `pg2-spawn 0.55s 0.0s ease-out both`
-                  : undefined,
-              transformOrigin: "center",
-            }}
-          >
-            <circle r="38" fill="url(#pg2-you-grad)" filter="url(#pg2-glow)" />
-            <text
-              textAnchor="middle"
-              dominantBaseline="central"
-              fontSize="14"
-              fontWeight={700}
-              fill="white"
-            >
-              YO
-            </text>
-          </g>
-        </g>
-      )}
+          YO
+        </text>
+      </g>
 
-      {/* People nodes — mounted from state 1; smoothly transition between states */}
+      {/* People nodes — transforms updated imperatively. CSS spawn-stagger
+          on state 1 entry; otherwise just visible. */}
       {showPeople &&
         PG_PEOPLE_2.map((p) => {
-          const [x, y] = personPosFor(p, state)
+          const [x, y] = initialPos(p.id)
           return (
             <g
               key={p.id}
-              transform={`translate(${x}, ${y})`}
+              ref={(el) => {
+                if (el) nodeGroupRefs.current.set(p.id, el)
+              }}
+              transform={`translate(${x},${y})`}
+              onPointerDown={(e) => onPointerDown(e, p.id)}
               style={{
-                transition: "transform 1s cubic-bezier(0.32,0.72,0,1)",
+                cursor: "grab",
+                touchAction: "none",
+                animation:
+                  state === 1
+                    ? `pg-spawn-fade 0.5s ${p.spawnDelay}s ease-out both`
+                    : undefined,
               }}
             >
-              <g
-                style={{
-                  animation:
-                    state === 1
-                      ? `pg2-spawn 0.55s ${p.spawnDelay}s ease-out both`
-                      : undefined,
-                  transformOrigin: "center",
-                }}
+              <circle
+                r="30"
+                fill={p.color}
+                stroke={P.elevated}
+                strokeWidth="2.6"
+                filter="url(#pg2-glow)"
+              />
+              <text
+                textAnchor="middle"
+                dominantBaseline="central"
+                fontSize="15"
+                fontWeight={700}
+                fill={P.text}
+                style={{ pointerEvents: "none", userSelect: "none" }}
               >
-                <circle
-                  r="22"
-                  fill={p.color}
-                  stroke={P.elevated}
-                  strokeWidth="2.2"
-                  filter="url(#pg2-glow)"
-                />
-                <text
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fontSize="12"
-                  fontWeight={700}
-                  fill={P.text}
-                >
-                  {p.label}
-                </text>
-              </g>
+                {p.label}
+              </text>
             </g>
           )
         })}
@@ -1334,18 +1787,21 @@ function ProblemGraph({ state }: { state: number }) {
       >
         {PG_POSTS_2.map((post, i) => {
           const rad = (post.angle * Math.PI) / 180
-          const r = 160
+          const r = 220
           const startX = PG_CX + Math.cos(rad) * r
           const startY = PG_CY + Math.sin(rad) * r
           const binX = PG_VB_W - 110
           const binY = PG_VB_H - 90
+          // Phone-aspect rectangles for the artifact images.
+          const w = 88
+          const h = 132
           return (
             <g key={`post-${i}`}>
               <style>{`
                 @keyframes pg2-suck-${i} {
                   0%   { transform: translate(${startX}px, ${startY}px) scale(1); opacity: 1; }
                   55%  { transform: translate(${startX}px, ${startY}px) scale(1); opacity: 1; }
-                  85%  { transform: translate(${(startX + binX) / 2}px, ${(startY + binY) / 2}px) scale(0.5); opacity: 0.85; }
+                  85%  { transform: translate(${(startX + binX) / 2}px, ${(startY + binY) / 2}px) scale(0.45); opacity: 0.85; }
                   100% { transform: translate(${binX}px, ${binY}px) scale(0.08); opacity: 0; }
                 }
               `}</style>
@@ -1358,23 +1814,25 @@ function ProblemGraph({ state }: { state: number }) {
                 }}
               >
                 <rect
-                  x="-28"
-                  y="-22"
-                  width="56"
-                  height="44"
-                  rx="6"
+                  x={-w / 2}
+                  y={-h / 2}
+                  width={w}
+                  height={h}
+                  rx="8"
                   fill={P.elevated}
                   stroke={P.muted}
-                  strokeOpacity="0.6"
+                  strokeOpacity="0.5"
                 />
-                <text
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fontSize="24"
-                  fill={P.muted}
-                >
-                  {post.mark}
-                </text>
+                <image
+                  href={post.src}
+                  x={-w / 2 + 3}
+                  y={-h / 2 + 3}
+                  width={w - 6}
+                  height={h - 6}
+                  preserveAspectRatio="xMidYMid slice"
+                  clipPath={`inset(0 round 6px)`}
+                  aria-hidden
+                />
               </g>
             </g>
           )
@@ -1420,25 +1878,24 @@ function ProblemGraph({ state }: { state: number }) {
           <g key={b.label}>
             <g transform={`translate(${b.x}, ${b.y})`}>
               <rect
-                x="-62"
-                y="-24"
-                width="124"
-                height="48"
-                rx="8"
+                x="-70"
+                y="-34"
+                width="140"
+                height="68"
+                rx="12"
                 fill={P.elevated}
                 stroke={P.primary}
                 strokeWidth="1.6"
               />
-              <text
-                textAnchor="middle"
-                dominantBaseline="central"
-                fontSize="15"
-                fontWeight={700}
-                fill={P.primary}
-                fontFamily="ui-monospace, monospace"
-              >
-                {b.label}
-              </text>
+              <image
+                href={b.icon}
+                x="-52"
+                y="-22"
+                width="104"
+                height="44"
+                preserveAspectRatio="xMidYMid meet"
+                aria-label={b.label}
+              />
             </g>
             <style>{`
               @keyframes pg2-mail-${i} {
@@ -1469,6 +1926,8 @@ function ProblemGraph({ state }: { state: number }) {
           </g>
         ))}
       </g>
+
+      </g>{/* end CAMERA */}
     </svg>
   )
 }
@@ -1505,17 +1964,26 @@ const PROBLEMS: { n: string; title: string; body: string }[] = [
   },
 ]
 
-const SOCIAL_ICONS: { label: string; mark: string; x: number; y: number; rot: number; size: number }[] = [
-  { label: "FB", mark: "f", x: 6, y: 8, rot: -8, size: 64 },
-  { label: "Instagram", mark: "◧", x: 86, y: 6, rot: 6, size: 70 },
-  { label: "X", mark: "𝕏", x: 4, y: 78, rot: 12, size: 58 },
-  { label: "TikTok", mark: "♪", x: 92, y: 80, rot: -10, size: 62 },
-  { label: "Snap", mark: "👻", x: 14, y: 44, rot: -6, size: 52 },
-  { label: "YouTube", mark: "▶", x: 82, y: 50, rot: 10, size: 56 },
-  { label: "Reddit", mark: "★", x: 50, y: 4, rot: 4, size: 48 },
-  { label: "WhatsApp", mark: "✆", x: 50, y: 90, rot: -4, size: 50 },
-  { label: "LinkedIn", mark: "in", x: 28, y: 16, rot: 6, size: 44 },
-  { label: "Discord", mark: "✿", x: 72, y: 22, rot: -8, size: 48 },
+type SocialIcon = {
+  label: string
+  src: string
+  x: number
+  y: number
+  rot: number
+  size: number
+}
+
+const SOCIAL_ICONS: SocialIcon[] = [
+  { label: "Facebook",  src: "/images/icons/facebook.png",  x: 6,  y: 8,  rot: -8,  size: 72 },
+  { label: "Instagram", src: "/images/icons/instagram.png", x: 86, y: 6,  rot: 6,   size: 76 },
+  { label: "Snapchat",  src: "/images/icons/snapchat.png",  x: 14, y: 44, rot: -6,  size: 58 },
+  { label: "TikTok",    src: "/images/icons/tik-tok.png",   x: 92, y: 80, rot: -10, size: 64 },
+  { label: "Snapchat 2", src: "/images/icons/snapchat.png", x: 4,  y: 78, rot: 12,  size: 60 },
+  { label: "Instagram 2", src: "/images/icons/instagram.png", x: 82, y: 50, rot: 10, size: 60 },
+  { label: "Facebook 2", src: "/images/icons/facebook.png", x: 50, y: 4,  rot: 4,   size: 52 },
+  { label: "TikTok 2",   src: "/images/icons/tik-tok.png",   x: 50, y: 90, rot: -4,  size: 54 },
+  { label: "Facebook 3", src: "/images/icons/facebook.png", x: 28, y: 16, rot: 6,   size: 46 },
+  { label: "Instagram 3", src: "/images/icons/instagram.png", x: 72, y: 22, rot: -8, size: 50 },
 ]
 
 function ProblemsSlide() {
@@ -1525,8 +1993,8 @@ function ProblemsSlide() {
       <div className="pointer-events-none absolute inset-0 z-0">
         {SOCIAL_ICONS.map((ic, i) => (
           <div
-            key={ic.label}
-            className="absolute flex items-center justify-center rounded-2xl"
+            key={`${ic.label}-${i}`}
+            className="absolute overflow-hidden rounded-2xl"
             style={{
               left: `${ic.x}%`,
               top: `${ic.y}%`,
@@ -1536,16 +2004,22 @@ function ProblemsSlide() {
               backgroundColor: P.elevated,
               border: `1px solid ${P.muted}33`,
               boxShadow: `0 12px 32px -22px ${P.text}66`,
-              color: P.muted,
-              fontFamily: SERIF,
-              fontSize: ic.size * 0.42,
-              fontWeight: 700,
-              opacity: 0.55,
+              opacity: 0.7,
               animation: `ppt-fade-up 0.8s ${0.05 * i}s ease-out both, ppt-pulse-line ${5 + i * 0.4}s ${i * 0.2}s ease-in-out infinite`,
             }}
             aria-hidden
           >
-            {ic.mark}
+            <img
+              src={ic.src}
+              alt=""
+              draggable={false}
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                padding: ic.size * 0.18,
+              }}
+            />
           </div>
         ))}
       </div>
