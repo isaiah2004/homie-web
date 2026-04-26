@@ -637,6 +637,22 @@ export const internalSetMatchState = internalMutation({
   },
 });
 
+// Resolves the action caller's viewer id. Lives here so the "use node"
+// eventMatch.ts file doesn't have to do its own users lookup (queries
+// can't run inside a Node action runtime).
+export const internalResolveViewerForAction = internalQuery({
+  args: { devUserId: v.optional(v.id("users")) },
+  handler: async (ctx, args): Promise<Id<"users">> => {
+    const identity = await resolveIdentity(ctx, { devUserId: args.devUserId });
+    const user = await ctx.db
+      .query("users")
+      .withIndex("email", (q) => q.eq("email", identity.email))
+      .unique();
+    if (!user) throw new Error("User not found for identity");
+    return user._id;
+  },
+});
+
 // Internal getters used by the eventMatch action for scoring inputs.
 // Pulling everything in once per compute keeps the action's transaction
 // surface small.

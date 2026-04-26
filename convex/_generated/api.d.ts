@@ -41,6 +41,8 @@ import type * as dmAgent from "../dmAgent.js";
 import type * as embeddings from "../embeddings.js";
 import type * as embeddingsBackfill from "../embeddingsBackfill.js";
 import type * as eventInvites from "../eventInvites.js";
+import type * as eventMatch from "../eventMatch.js";
+import type * as eventRooms from "../eventRooms.js";
 import type * as events from "../events.js";
 import type * as family from "../family.js";
 import type * as friends from "../friends.js";
@@ -112,6 +114,8 @@ declare const fullApi: ApiFromModules<{
   embeddings: typeof embeddings;
   embeddingsBackfill: typeof embeddingsBackfill;
   eventInvites: typeof eventInvites;
+  eventMatch: typeof eventMatch;
+  eventRooms: typeof eventRooms;
   events: typeof events;
   family: typeof family;
   friends: typeof friends;
