@@ -124,6 +124,7 @@ export default function LobbyPage() {
   const revokeShareLink = useIdentifiedMutation(
     api.eventRooms.revokeShareLink,
   )
+  const leaveLobby = useIdentifiedMutation(api.eventRooms.leaveEventRoom)
 
   const joinAttemptedRef = React.useRef(false)
   React.useEffect(() => {
@@ -264,6 +265,17 @@ export default function LobbyPage() {
     }
   }
 
+  async function handleLeave() {
+    if (!confirm("Leave this lobby? You can rejoin via the share link.")) return
+    try {
+      await leaveLobby({ eventId })
+      toast.success("Left lobby")
+      router.push(`/dashboard/events/${eventId}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not leave")
+    }
+  }
+
   return (
     <PageShell header={<SiteHeader pageName={event.name} />}>
       <div className="flex min-h-0 flex-1 flex-col">
@@ -350,6 +362,11 @@ export default function LobbyPage() {
                   )}
                 </>
               )}
+              {!isHost && (
+                <Button size="sm" variant="ghost" onClick={handleLeave}>
+                  Leave lobby
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -358,7 +375,11 @@ export default function LobbyPage() {
         <div className="flex min-h-0 flex-1">
           <div className="flex min-h-0 flex-1 flex-col bg-background">
             {viewerId ? (
-              <LobbyChatPanel eventId={eventId} viewerId={viewerId} />
+              <LobbyChatPanel
+                eventId={eventId}
+                viewerId={viewerId}
+                roomEnabled={roomEnabled}
+              />
             ) : (
               <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
                 Sign-in required for production lobby chat (dev mode uses the switcher).

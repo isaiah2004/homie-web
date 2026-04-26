@@ -36,9 +36,11 @@ type Sender = {
 export function LobbyChatPanel({
   eventId,
   viewerId,
+  roomEnabled = true,
 }: {
   eventId: Id<"events">
   viewerId: Id<"users">
+  roomEnabled?: boolean
 }) {
   const PAGE_SIZE = 80
 
@@ -149,11 +151,17 @@ export function LobbyChatPanel({
         </div>
       </ScrollArea>
       <div className="shrink-0 border-t p-3">
-        <RichTextComposer
-          viewerId={viewerId}
-          placeholder="Message the lobby…"
-          onSend={handleSend}
-        />
+        {roomEnabled ? (
+          <RichTextComposer
+            viewerId={viewerId}
+            placeholder="Message the lobby…"
+            onSend={handleSend}
+          />
+        ) : (
+          <p className="py-2 text-center text-xs text-muted-foreground">
+            This lobby is closed — read-only.
+          </p>
+        )}
       </div>
     </div>
   )
